@@ -1,0 +1,15 @@
+Itrip = 65kV/RILIM(kohm). If RILIM = 33 kΩ, the DRV8871-Q1 device limits motor current to 2 A no matter how much load torque is applied
+
+When using PWM, it typically works best to switch between driving and braking. For example, to drive a motor forward with 50% of its max RPM, IN1 = 1 and IN2 = 0 during the driving period, and IN1 = 1 and IN2 = 1 during the other period.
+
+PINCM  Pin   Mode    Timer     Usage
+17     PB4   Mode4   TIMA1_C0  Left Motor,  IN2, PWM low for forward, GPIO high for reverse 
+13     PB1   Mode4   TIMA1_C1  Left Motor,  IN1, GPIO high for forward, PWM low for reverse  
+
+25     PB8   Mode4   TIMA0_C0  Right Motor, IN2, PWM low for forward, GPIO high for reverse   
+26     PB9   Mode4   TIMA0_C1  Right Motor, IN1, GPIO high for forward, PWM low for reverse 
+
+23     PB6   Mode7   TIMG6_C0  Steering Servo PWM high 20ms period,   
+
+
+

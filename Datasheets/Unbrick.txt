@@ -1,0 +1,7 @@
+MSPM0
+Recovery Action 3. Force BSL with physical Reset:
+
+    Press-and-hold the BSL_Invoke button (S2, near LED) while pressing and releasing the Reset button.
+    The device should go to BSL and stay in Active mode for ~10secs.
+    Attempt to program immediately after releasing reset.
+

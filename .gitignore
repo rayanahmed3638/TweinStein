@@ -1,0 +1,35 @@
+# --- CCS Build Outputs ---
+# Excludes the Debug and Release folders where .out, .obj, and .map files live
+[Dd]ebug/
+[Rr]elease/
+*.out
+*.map
+*.obj
+*.d
+*.bin
+
+# --- SysConfig Generated Files ---
+# Optional: Many developers ignore these because they regenerate on build
+# If you want a "clean" repo, keep these ignored.
+ti_msp_dl_config.c
+ti_msp_dl_config.h
+ti_sysconfig_dependencies.dot
+
+# --- Eclipse/CCS Project Metadata ---
+# We keep .project and .cproject, but ignore local user settings
+.settings/
+.launches/
+.externalToolBuilders/
+*.launch
+
+# --- OS Specific ---
+.DS_Store
+Thumbs.db
+
+.theia
+
+# --- Claude ---
+.claude/
+.claude*
+CLAUDE.md
+CLAUDE.local.md

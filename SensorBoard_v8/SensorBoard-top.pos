@@ -1,0 +1,46 @@
+### Footprint positions - created on 2025-12-17T13:46:50-0600 ###
+### Printed by KiCad version 9.0.5
+## Unit = mm, Angle = deg.
+## Side : top
+# Ref     Val                 Package                     PosX       PosY       Rot  Side
+C1        4.7uF               C_0805_2012Metric        97.7900  -109.8550  -90.0000  top
+C2        4.7uF               C_0805_2012Metric        97.7900  -115.2500   90.0000  top
+C3        0.1uF               C_0603_1608Metric        85.0900   -43.3070  180.0000  top
+C4        22uF                C_0805_2012Metric       168.2750  -106.6800  180.0000  top
+C5        22uF                C_0805_2012Metric       182.8800  -106.6800  180.0000  top
+C6        22uF                C_0805_2012Metric       186.6290   -46.1010    0.0000  top
+C7        22uF                C_0805_2012Metric       153.9900  -106.6800  180.0000  top
+C8        0.1uF               C_0603_1608Metric        84.5690   -33.9090    0.0000  top
+C9        1.5uF               C_0603_1608Metric        58.6740   -83.1850   90.0000  top
+C10       220nF               C_0603_1608Metric        63.2460   -83.1850  -90.0000  top
+C11       1.5uF               C_0603_1608Metric        72.1360   -83.1850  -90.0000  top
+C12       220nF               C_0603_1608Metric        67.5640   -83.1850  -90.0000  top
+C13       1.5uF               C_0603_1608Metric        58.6740   -67.3100  -90.0000  top
+C14       220nF               C_0603_1608Metric        63.2460   -67.3100   90.0000  top
+C15       1.5uF               C_0603_1608Metric        72.1360   -67.3100   90.0000  top
+C16       220nF               C_0603_1608Metric        67.5640   -67.3100   90.0000  top
+C17       0.1uF               C_0603_1608Metric        65.4050   -81.1660  -90.0000  top
+D1        LED                 APT1608CGCK              91.8850  -117.2210  180.0000  top
+D2        LED                 APT1608CGCK             120.2050  -115.0620  180.0000  top
+D3        BAT_60A_E6327       SOD2513X110N             81.1530  -116.2050  180.0000  top
+D4        BAT_60A_E6327       SOD2513X110N             81.1530  -110.4900  180.0000  top
+J2_J4     LaunchPad           LaunchPad                92.7100   -54.5950    0.0000  top
+J3_J1     LaunchPad           LaunchPad                92.7100   -97.7750    0.0000  top
+J11       TF-Luna2            CONN_SM06B-GHS-TB_JST   196.2150   -43.1800   90.0000  top
+J12       TF-Luna3            CONN_SM06B-GHS-TB_JST   196.2150   -94.6150   90.0000  top
+J13       TF-Luna1            CONN_SM06B-GHS-TB_JST   196.1607  -112.2900   90.0000  top
+R1        1.6k                R_0603_1608Metric        88.3290  -117.2210    0.0000  top
+R2        750                 R_0603_1608Metric       116.2690  -115.0620    0.0000  top
+R4        120                 R_0603_1608Metric        74.8670   -43.0530    0.0000  top
+R5        1.6k                R_0603_1608Metric        56.3880   -83.1850  -90.0000  top
+R6        20k                 R_0603_1608Metric        60.9600   -83.1850   90.0000  top
+R7        1.6k                R_0603_1608Metric        74.4220   -83.1850  -90.0000  top
+R8        20k                 R_0603_1608Metric        69.8500   -83.1850   90.0000  top
+R9        1.6k                R_0603_1608Metric        56.3880   -67.3100   90.0000  top
+R10       20k                 R_0603_1608Metric        60.9600   -67.3100  -90.0000  top
+R11       1.6k                R_0603_1608Metric        74.4220   -67.3100   90.0000  top
+R12       20k                 R_0603_1608Metric        69.8500   -67.3100  -90.0000  top
+U2        LM2937ESX-3.3_NOPB  SOT230P700X180-4N       107.1630  -113.0440    0.0000  top
+U6        TCAN1057AVDRQ1      SOIC127P600X175-8N       84.3720   -37.7190  180.0000  top
+U7        OPA4354AIDR         SOIC127P600X175-14N      65.2780   -75.1020   90.0000  top
+## End

@@ -1,0 +1,8 @@
+Part	Manufacturer	Part Number	Quantity	Price	Attribute 1 Name	Attribute 1 Value	Attribute 2 Name	Attribute 2 Value	Attribute 3 Name	Attribute 3 Value	Footprint
+Cbst	AVX	08053C104KAT2A	1	0.01							805
+Cin	MuRata	GRM32ER61E226KE15L	1	0.16							1210
+Cout	TDK	C3216X5R1E476M160AC	1	0.35							1206
+L1	TDK	CLF7045T-3R3N	1	0.42	L	3.3uH	DCR	0.02Ohm	IDC	5A	CLF7045
+Rfbb	Vishay-Dale	CRCW080510K0FKEA	1	0.01	Resistance	10kOhm	Tolerance	1%	Power	0.125W	805
+Rfbt	Vishay-Dale	CRCW080556K2FKEA	1	0.01	Resistance	56.2kOhm	Tolerance	1%	Power	0.125W	805
+U1	Texas Instruments	TPS563200DDCR	1	0.5							DDC0006A

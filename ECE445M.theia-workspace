@@ -1,0 +1,13 @@
+{
+  "folders": [
+    {
+      "path": ""
+    },
+    {
+      "path": "TimerPWM"
+    }
+  ],
+  "settings": {
+    "CCS.debug.serial.options.localEcho": true
+  }
+}
