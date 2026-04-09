@@ -65,7 +65,7 @@ void CAN_GetMail(uint32_t *id, uint32_t *dlc, uint8_t *data);
 
 int CAN_SendCommand(uint32_t id, CanCommand_t*);
 
-void Can_ReadCommand(CanCommand_t* command);
+void CAN_ReadCommand(CanCommand_t* command);
 
 #endif //  __CAN_H__
 

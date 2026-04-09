@@ -582,7 +582,6 @@ int realmain(void){     // realmain
   NumCreated += OS_AddThread(&Interpreter,128,1);
   NumCreated += OS_AddThread(&ServoThread, 128, 1);  // CAN -> motor/servo control
 
-  // --- ESP8266 WiFi (Lab 6) ---
   // Init and connect happen inside WifiTask thread (requires OS scheduler running)
   AddThreadStart = TIMG12->COUNTERREGS.CTR; // down count
   NumCreated += OS_AddThread(&WifiTask, 128, 1);

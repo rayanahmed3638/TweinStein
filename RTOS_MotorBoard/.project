@@ -46,6 +46,11 @@
 			<locationURI>PARENT-1-PROJECT_LOC/RTOS_Labs_common/DFT16.c</locationURI>
 		</link>
 		<link>
+			<name>I2C.c</name>
+			<type>1</type>
+			<location>/home/elijah/Development/ECE_445M/MSPM0LabProjects/inc/I2C.c</location>
+		</link>
+		<link>
 			<name>IRDistance.c</name>
 			<type>1</type>
 			<locationURI>PARENT-1-PROJECT_LOC/RTOS_Labs_common/IRDistance.c</locationURI>
@@ -91,6 +96,11 @@
 			<locationURI>PARENT-1-PROJECT_LOC/RTOS_Labs_common/SPI.c</locationURI>
 		</link>
 		<link>
+			<name>SSD1306.c</name>
+			<type>1</type>
+			<location>/home/elijah/Development/ECE_445M/MSPM0LabProjects/inc/SSD1306.c</location>
+		</link>
+		<link>
 			<name>ST7735_SDC.c</name>
 			<type>1</type>
 			<locationURI>PARENT-1-PROJECT_LOC/RTOS_Labs_common/ST7735_SDC.c</locationURI>
@@ -113,7 +123,7 @@
 		<link>
 			<name>esp8266.c</name>
 			<type>1</type>
-			<locationURI>PARENT-1-PROJECT_LOC/RTOS_Labs_common/esp8266.c</locationURI>
+			<location>/home/elijah/Development/ECE_445M/MSPM0LabProjects/RTOS_Labs_common/esp8266.c</location>
 		</link>
 		<link>
 			<name>osasm.s</name>

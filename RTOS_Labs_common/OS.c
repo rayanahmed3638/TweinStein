@@ -142,9 +142,6 @@ void OS_Init(void){
   // Initialize UART
   UART_Init(1);
 
-  // Initialize LCD
-  // ST7735_InitR(INITR_REDTAB); // Motor board uses SSD1306, not ST7735
-
   // Initialize time
   TimerG12_Init();
 
@@ -681,7 +678,7 @@ void TIMG8_IRQHandler(void){
 void (*S2Task)(void) = NULL;
 void (*PA28Task)(void) = NULL;
 void (*BumpTask)(bump_status) = NULL;
-extern uint32_t BumpStatus; // WiFi logging global in RTOS_MotorBoard.c
+uint32_t BumpStatus; // WiFi logging global in RTOS_MotorBoard.c
 void GROUP1_IRQHandler(void){
   // write this
   TogglePB20();

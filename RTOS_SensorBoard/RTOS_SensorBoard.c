@@ -450,6 +450,8 @@ void ServoThread(void){
       direction = 1;
     }
 
+    ST7735_Message(1, 2, "Steering: ", position);
+
     CanCommand_t motorCommand;
     motorCommand.CommandType = CMD_MOTOR;
     motorCommand.Field1 = duties[duty];
@@ -487,6 +489,9 @@ int realmain(void){     // realmain
   // CAN init for sending motor commands to motor board
   CAN_Init();
   CAN_EnableInterrupts(1);
+
+  //Initialize LCD
+  ST7735_InitR(INITR_REDTAB); // Motor board uses SSD1306, not ST7735
 
   // attach background tasks
   OS_AddS2Task(&S2Push,1);      // fall of PB21

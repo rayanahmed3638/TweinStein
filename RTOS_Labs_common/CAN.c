@@ -35,7 +35,7 @@
 #include "../RTOS_Labs_common/OS.h"
 uint32_t CAN_PID,CAN_CREL; // version
 
-Sema4_t RxDataAvailable;
+Sema4_t CanDataAvailable;
 
 __STATIC_INLINE uint32_t READ_REG32_RAW(uint32_t addr){
   uint32_t regVal = *(volatile uint32_t *) addr;
@@ -302,7 +302,7 @@ void CAN_Init(void){uint32_t regVal;
   while((CANFD0->MCANSS.MCAN.MCAN_CCCR&0x01)==1){}; // wait for normal mode
 
   // Initialize semaphore for read
-  OS_InitSemaphore(&RxDataAvailable, 0);
+  OS_InitSemaphore(&CanDataAvailable, 0);
 }
 
 void CAN_EnableInterrupts(uint32_t priority){
@@ -529,7 +529,7 @@ uint32_t dlc;
       processFlag = readCANRxMsg();
       if(processFlag == true){
         GPIOA->DOUTTGL31_0  = 1;
-        OS_Signal(&RxDataAvailable);
+        OS_Signal(&CanDataAvailable);
 
       }
       break;
@@ -562,7 +562,7 @@ int CAN_GetMailNonBlock(uint32_t *id, uint32_t *dlc, uint8_t *data){
 // if receive data is ready, gets the data 
 // if no receive data is ready, it waits until it is ready
 void CAN_GetMail(uint32_t *id, uint32_t *dlc, uint8_t *data){
-  OS_Wait(&RxDataAvailable); // Use semaphore instead of spinning
+  OS_Wait(&CanDataAvailable); // Use semaphore instead of spinning
   //while(CANGetI == CANPutI){};
   *id  = CANFIFO[CANGetI].id;
   *dlc = CANFIFO[CANGetI].dlc;
