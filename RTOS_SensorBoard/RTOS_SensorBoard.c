@@ -15,7 +15,7 @@
 #include "../RTOS_Labs_common/IRDistance.h"
 #include "../RTOS_Labs_common/LPF.h"
 #include "../RTOS_Labs_common/DFT16.h"
-#include "../RTOS_Labs_common/TFLuna2.h"
+#include "../RTOS_Labs_common/TFLuna3.h"
 #include "../RTOS_Labs_common/OS.h"
 #include "../RTOS_Labs_common/eDisk.h"
 #include "../RTOS_Labs_common/eFile.h"
@@ -282,17 +282,30 @@ void Robot(void){
   UART_OutString("Robot running...");
   StartFileDump(FileName);
 
-  while(FilterWork < RUNLENGTH) { 
+  int32_t prevError = 0;
+
+  while(1) { 
     uint32_t data;      // in mm, from TFLuna
     uint32_t sum=0;
-    for(int t = 0; t < 16; t++){   // collect 16 TFLuna samples
+    for(int t = 0; t < 8; t++){   // collect 16 TFLuna samples
       data = OS_Fifo_Get();    // get from producer, mm
       x[t] = data;
       sum += data;             // average
     }
-    Distance2 = sum>>4;  // in mm
-    FileDump(Distance,Distance2);
-    OS_MailBox_Send(Distance2); // called every 10ms*16 = 160ms
+    Distance2 = sum>>3;  // in mm
+    // FileDump(Distance,Distance2);
+
+    int32_t angle = arctan(((int32_t)(Distance*1414) - (int32_t)(Distance2*1000))/(int32_t)(224+Distance2));
+
+    CanCommand_t motorCommand;
+    motorCommand.CommandType = CMD_MOTOR;
+    motorCommand.Field1 = 5000;
+    motorCommand.Field2 = 5000;
+    motorCommand.Field3 = (angle <= 15 && Distance > 105) ? 3350 : ((angle >= -15 && Distance < 65) ? 2850 : ((angle > 5) ? 2850 : (angle < -5 ? 3350 : 3310)));
+    // ST7735_Message(1, 2, "Steering: ", motorCommand.Field3);
+    // ST7735_Message(1,0,"wall_angle =", angle);
+    int status = CAN_SendCommand(0, &motorCommand);
+    // OS_Sleep(delay);
   }
   EndFileDump();
   UART_OutString("done.\n\r>");
@@ -516,15 +529,15 @@ int realmain(void){     // realmain
 	// create initial foreground threads
   NumCreated = 0;
   NumCreated += OS_AddThread(&Interpreter,128,1);
-  NumCreated += OS_AddThread(&ServoThread,128,1);  // CAN motor commands (waits for S2)
+  NumCreated += OS_AddThread(&Robot,128,1);  // CAN motor commands (waits for S2)
   NumCreated += OS_AddThread(&VirusDetector,128,2);
  
   LPF_Init7(500,7);
-  TFLuna2_Init(&Producer);
-  TFLuna2_Format_Standard_mm(); // format in mm
-  TFLuna2_Frame_Rate();         // 100 samples/sec
-  TFLuna2_SaveSettings();  // save format and rate
-  TFLuna2_System_Reset();  // start measurements
+  TFLuna3_Init(&Producer);
+  TFLuna3_Format_Standard_mm(); // format in mm
+  TFLuna3_Frame_Rate();         // 100 samples/sec
+  TFLuna3_SaveSettings();  // save format and rate
+  TFLuna3_System_Reset();  // start measurements
 
   if(eFile_Init())              diskError("eFile_Init",0); 
   // if(eFile_Format())            diskError("eFile_Format",0); 
