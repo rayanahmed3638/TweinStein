@@ -33,7 +33,7 @@
 
 // Thread constants
 #define MAXNUMTHREADS 10
-#define STACKSIZE 128
+#define STACKSIZE 256
 #define NUMPRIORITIES 8
 #define MAXEVENTS 200
 

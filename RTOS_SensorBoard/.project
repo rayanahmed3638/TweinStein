@@ -31,11 +31,6 @@
 			<locationURI>PARENT-1-PROJECT_LOC/inc/ADC.c</locationURI>
 		</link>
 		<link>
-			<name>CAN.c</name>
-			<type>1</type>
-			<location>/home/elijah/Development/ECE_445M/MSPM0LabProjects/RTOS_Labs_common/CAN.c</location>
-		</link>
-		<link>
 			<name>Clock.c</name>
 			<type>1</type>
 			<locationURI>PARENT-1-PROJECT_LOC/inc/Clock.c</locationURI>
@@ -99,6 +94,11 @@
 			<name>TFLuna2.c</name>
 			<type>1</type>
 			<locationURI>PARENT-1-PROJECT_LOC/RTOS_Labs_common/TFLuna2.c</locationURI>
+		</link>
+		<link>
+			<name>TFLuna3.c</name>
+			<type>1</type>
+			<location>/Users/adipu/lab-7-tweinstein-1/RTOS_Labs_common/TFLuna3.c</location>
 		</link>
 		<link>
 			<name>TFLunaCommon.c</name>
