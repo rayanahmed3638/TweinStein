@@ -5,6 +5,12 @@
  * A two-pin female header is required on the LaunchPad TP10(XDS_VCC) and TP9(!RSTN)
  */
 
+#define angle_ref 5 // degrees "0"
+#define dist_ref 70 // mm
+#define kp_d 5
+#define kd_d 2
+#define kp_a 1
+
 #include <ti/devices/msp/msp.h>
 #include "../inc/LaunchPad.h"
 #include "../RTOS_Labs_common/ADC.h"
@@ -295,13 +301,22 @@ void Robot(void){
     Distance2 = sum>>3;  // in mm
     // FileDump(Distance,Distance2);
 
-    int32_t angle = arctan(((int32_t)(Distance*1414) - (int32_t)(Distance2*1000))/(int32_t)(224+Distance2));
+    int32_t e_d = Distance - dist_ref;
+    // ST7735_Message(1, 2, "dist. err: ", e_d);
+    int32_t intend_angle = ((kp_d * e_d) / 10) + ((kd_d * (e_d - prevError)) / 10);
+    // ST7735_Message(1, 0, "intend_angle: ", intend_angle);
+    int32_t angle = arctan(((int32_t)(Distance*1414) - (int32_t)(Distance2*1000))/(int32_t)(224+Distance2)) - angle_ref;
+    // ST7735_Message(1, 1, "curr_angle: ", angle);
+    prevError = e_d;
 
+    int32_t mComm = (intend_angle - angle) * kp_a;
+    // ST7735_Message(1, 3, "Motor command: ", mComm);
+    // ST7735_Message(1, 2, "angle: ", angle);
     CanCommand_t motorCommand;
     motorCommand.CommandType = CMD_MOTOR;
     motorCommand.Field1 = 5000;
     motorCommand.Field2 = 5000;
-    motorCommand.Field3 = (angle <= 15 && Distance > 105) ? 3350 : ((angle >= -15 && Distance < 65) ? 2850 : ((angle > 5) ? 2850 : (angle < -5 ? 3350 : 3310)));
+    motorCommand.Field3 = mComm;
     // ST7735_Message(1, 2, "Steering: ", motorCommand.Field3);
     // ST7735_Message(1,0,"wall_angle =", angle);
     int status = CAN_SendCommand(0, &motorCommand);
