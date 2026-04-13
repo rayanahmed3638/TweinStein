@@ -33,15 +33,16 @@
 #define __CAN_H__
 #include <stdint.h>
 
-typedef uint16_t CommandType_t;
+typedef uint16_t MessageType_t;
 #define CMD_MOTOR 0
+#define DATA_STATS 1
 
 typedef struct{
-   CommandType_t CommandType;
-   uint16_t Field1; // Duty_L
-   uint16_t Field2; // Duty_R 
-   uint16_t Field3; // Steering_Pos
-} CanCommand_t;
+   MessageType_t MessageType;
+   uint16_t Field1;
+   uint16_t Field2;
+   uint16_t Field3;
+} CanMessage_t;
 
 void CAN_Init(void);
 
@@ -63,9 +64,13 @@ int CAN_GetMailNonBlock(uint32_t *id, uint32_t *dlc, uint8_t *data);
 // if no receive data is ready, it waits until it is ready
 void CAN_GetMail(uint32_t *id, uint32_t *dlc, uint8_t *data);
 
-int CAN_SendCommand(uint32_t id, CanCommand_t*);
+int CAN_SendMessage(uint32_t id, CanMessage_t*);
 
-void CAN_ReadCommand(CanCommand_t* command);
+void CAN_ReadMessage(CanMessage_t* message);
+
+int CAN_SetMotors(uint16_t Duty_L, uint16_t Duty_R, int16_t SteeringAngle);
+
+int CAN_SendOSData(uint16_t jitter);
 
 #endif //  __CAN_H__
 

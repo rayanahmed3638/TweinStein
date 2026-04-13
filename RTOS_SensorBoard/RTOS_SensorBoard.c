@@ -452,12 +452,12 @@ void ServoThread(void){
 
     ST7735_Message(1, 2, "Steering: ", position);
 
-    CanCommand_t motorCommand;
-    motorCommand.CommandType = CMD_MOTOR;
+    CanMessage_t motorCommand;
+    motorCommand.MessageType = CMD_MOTOR;
     motorCommand.Field1 = duties[duty];
     motorCommand.Field2 = duties[8-duty];
     motorCommand.Field3 = position;
-    int status = CAN_SendCommand(0, &motorCommand);
+    int status = CAN_SendMessage(0, &motorCommand);
     OS_Sleep(delay);
 
     duty++;
@@ -468,6 +468,20 @@ void ServoThread(void){
 }
 
 //--------------end of Task 5-----------------------------
+
+// blind send right now, assumes globals are set
+uint16_t steering, left, right;
+uint8_t needsData;
+void CanSendThread(void){
+  while (1){
+    if (needsData){
+      CAN_SendOSData((uint16_t)MaxJitter3);
+    }
+    else{
+      CAN_SetMotors(left, right, steering);
+    }
+  }
+}
 
 
 //*******************final user main DEMONTRATE THIS TO TA**********

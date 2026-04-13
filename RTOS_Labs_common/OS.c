@@ -85,9 +85,9 @@ void StartOS(void); // implemented in osasm.s
 // used for preemptive foreground thread switch
 // ------------------------------------------------------------------------------
 void SysTick_Handler(void) {
-  SysTickStart = TIMG12->COUNTERREGS.CTR; // down count
+  SysTickStart = OS_Time();
   SCB->ICSR = 0x10000000; // Invoke PendSV for context switch
-  SysTickElapsed = SysTickStart - TIMG12->COUNTERREGS.CTR;
+  SysTickElapsed = OS_Time() - SysTickStart;
 } // end SysTick_Handler
 
 // Scheduler handles the algorithm for switching threads

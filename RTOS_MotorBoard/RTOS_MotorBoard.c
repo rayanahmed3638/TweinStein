@@ -446,12 +446,12 @@ char WifiStatus[16];
 uint32_t WifiStartTime, WifiEndTime, WifiElapsedTime;
 
 // --- WiFi logging parameter globals ---
-extern uint32_t SysTickElapsed;  // from OS.c, measured in SysTick_Handler
-uint32_t AddThreadStart,AddThreadElapsed; // measured once at startup in realmain
-uint32_t RightMotorDuty;         // teammate updates when setting right motor duty
-uint32_t LeftMotorDuty;          // teammate updates when setting left motor duty
-uint32_t SteeringDuty;           // teammate updates when setting servo duty
-uint32_t BumpStatus;             // teammate updates from bump sensors
+extern uint32_t SysTickElapsed;
+uint32_t AddThreadStart,AddThreadElapsed;
+uint32_t RightMotorDuty;
+uint32_t LeftMotorDuty;
+uint32_t Steering;
+uint32_t BumpStatus;
 
 void BuildLogData(void){
   sprintf(LOGDATA,
@@ -466,7 +466,7 @@ void BuildLogData(void){
     "&jitter=%u"
     " HTTP/1.0\r\n"
     "HOST: embedded.ece.utexas.edu\r\n\r\n",
-    BumpStatus, SteeringDuty, RightMotorDuty, LeftMotorDuty,
+    BumpStatus, Steering, RightMotorDuty, LeftMotorDuty,
     SysTickElapsed, AddThreadElapsed, MaxJitter3);
 }
 
@@ -524,15 +524,15 @@ void ServoThread(void){
   SSD1306_OutString("Waiting for CAN...");
   while(1){
     // Wait for data
-    CanCommand_t motorCommand;
-    CAN_ReadCommand(&motorCommand);
-    if (motorCommand.CommandType == CMD_MOTOR){
+    CanMessage_t motorCommand;
+    CAN_ReadMessage(&motorCommand);
+    if (motorCommand.MessageType == CMD_MOTOR){
       PWMA0_Forward(motorCommand.Field1);
       PWMA1_Backward(motorCommand.Field2);
       PWMG6_SetDuty(motorCommand.Field3);
       LeftMotorDuty = motorCommand.Field1;
       RightMotorDuty = motorCommand.Field2;
-      SteeringDuty = motorCommand.Field3;
+      Steering = motorCommand.Field3;
       // Display received command on SSD1306
       SSD1306_SetCursor(0,1);
       SSD1306_OutString("CAN cmd received    ");
@@ -549,6 +549,25 @@ void ServoThread(void){
       SSD1306_SetCursor(0,5);
       SSD1306_OutString("WiFi: ");
       SSD1306_OutString(WifiStatus);
+    }
+  }
+}
+
+// blind send right now, assumes globals are set
+uint16_t left, right;
+int16_t steering;
+uint16_t jitter;
+void CanReadThread(void){
+  while (1){
+    CanMessage_t message;
+    CAN_ReadMessage(&message);
+    if (message.MessageType == CMD_MOTOR){
+      left = message.Field1;
+      right = message.Field2;
+      steering = (int16_t)message.Field3;
+    }
+    else{
+      jitter = message.Field1;
     }
   }
 }
@@ -583,9 +602,9 @@ int realmain(void){     // realmain
   NumCreated += OS_AddThread(&ServoThread, 128, 1);  // CAN -> motor/servo control
 
   // Init and connect happen inside WifiTask thread (requires OS scheduler running)
-  AddThreadStart = TIMG12->COUNTERREGS.CTR; // down count
+  AddThreadStart = OS_Time();
   NumCreated += OS_AddThread(&WifiTask, 128, 1);
-  AddThreadElapsed = AddThreadStart - TIMG12->COUNTERREGS.CTR;
+  AddThreadElapsed = OS_Time() - AddThreadStart;
   NumCreated += OS_AddThread(&VirusDetector,128,3);
   Jitter3_Init();
   JitterCount = 0;
