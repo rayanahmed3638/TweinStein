@@ -96,11 +96,6 @@
 			<locationURI>PARENT-1-PROJECT_LOC/RTOS_Labs_common/TFLuna2.c</locationURI>
 		</link>
 		<link>
-			<name>TFLuna3.c</name>
-			<type>1</type>
-			<location>/Users/adipu/lab-7-tweinstein-1/RTOS_Labs_common/TFLuna3.c</location>
-		</link>
-		<link>
 			<name>TFLunaCommon.c</name>
 			<type>1</type>
 			<locationURI>PARENT-1-PROJECT_LOC/RTOS_Labs_common/TFLunaCommon.c</locationURI>

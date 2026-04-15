@@ -354,14 +354,14 @@ void Robot(void){
     prevE_A = e_a;
     // ST7735_Message(1, 3, "Motor command: ", mComm);
     // ST7735_Message(1, 2, "angle: ", angle);
-    CanCommand_t motorCommand;
-    motorCommand.CommandType = CMD_MOTOR;
+    CanMessage_t motorCommand;
+    motorCommand.MessageType = CMD_MOTOR;
     motorCommand.Field1 = 9000;
     motorCommand.Field2 = 9000;
     motorCommand.Field3 = mComm;
     // ST7735_Message(1, 2, "Steering: ", motorCommand.Field3);
     // ST7735_Message(1,0,"wall_angle =", angle);
-    uint8_t status = CAN_SendCommand(0, &motorCommand);
+    uint8_t status = CAN_SendMessage(0, &motorCommand);
     // OS_Sleep(delay);
   }
   EndFileDump();

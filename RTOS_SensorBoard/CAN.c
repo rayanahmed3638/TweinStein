@@ -574,7 +574,7 @@ void CAN_GetMail(uint32_t *id, uint32_t *dlc, uint8_t *data){
 
 // 0 if failure
 // 1 if ok
-int CAN_SendCommand(uint32_t id, CanCommand_t* command){
+int CAN_SendMessage(uint32_t id, CanMessage_t* command){
   int status = CAN_Send(id, 8, (uint8_t*)command); // returns 1 if OK
   if (status == 1){
     return 1;
@@ -582,7 +582,23 @@ int CAN_SendCommand(uint32_t id, CanCommand_t* command){
   return 0;
 }
 
-void CAN_ReadCommand(CanCommand_t* command){
+void CAN_ReadMessage(CanMessage_t* message){
   uint32_t id, dlc;
-  CAN_GetMail(&id, &dlc, (uint8_t*)command);
+  CAN_GetMail(&id, &dlc, (uint8_t*)message);
+}
+
+int CAN_SetMotors(uint16_t Duty_L, uint16_t Duty_R, int16_t SteeringAngle){
+  CanMessage_t motorCommand;
+  motorCommand.MessageType = CMD_MOTOR;
+  motorCommand.Field1 = Duty_L;
+  motorCommand.Field2 = Duty_R;
+  motorCommand.Field3 = (uint16_t)SteeringAngle;
+
+  return CAN_SendMessage(0, &motorCommand);
+}
+
+int CAN_SendOSData(uint16_t jitter){
+  CanMessage_t OsData;
+  OsData.MessageType = DATA_STATS;
+  return CAN_SendMessage(0, &OsData);
 }

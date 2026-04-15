@@ -86,11 +86,6 @@
 			<locationURI>PARENT-1-PROJECT_LOC/RTOS_Labs_common/SPI.c</locationURI>
 		</link>
 		<link>
-			<name>SSD1306.c</name>
-			<type>1</type>
-			<location>/Users/adipu/lab-7-tweinstein-1/inc/SSD1306.c</location>
-		</link>
-		<link>
 			<name>ST7735_SDC.c</name>
 			<type>1</type>
 			<locationURI>PARENT-1-PROJECT_LOC/RTOS_Labs_common/ST7735_SDC.c</locationURI>
@@ -109,11 +104,6 @@
 			<name>eFile.c</name>
 			<type>1</type>
 			<locationURI>PARENT-1-PROJECT_LOC/RTOS_Labs_common/eFile.c</locationURI>
-		</link>
-		<link>
-			<name>esp8266.c</name>
-			<type>1</type>
-			<location>/Users/adipu/lab-7-tweinstein-1/RTOS_Labs_common/esp8266.c</location>
 		</link>
 		<link>
 			<name>osasm.s</name>
