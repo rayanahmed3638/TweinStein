@@ -600,5 +600,6 @@ int CAN_SetMotors(uint16_t Duty_L, uint16_t Duty_R, int16_t SteeringAngle){
 int CAN_SendOSData(uint16_t jitter){
   CanMessage_t OsData;
   OsData.MessageType = DATA_STATS;
+  OsData.Field1 = jitter;
   return CAN_SendMessage(0, &OsData);
 }

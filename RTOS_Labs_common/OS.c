@@ -67,6 +67,8 @@ Event_t PeriodicTasks[MAXEVENTS];
 Mailbox_t OS_Mailbox;
 Fifo_t OS_Fifo;
 
+uint8_t crashed;
+
 void OS_ClearMsTime(void); // implemented in osasm.s
 
 uint32_t OS_MsTime(void); // implemented in osasm.s
@@ -390,7 +392,7 @@ int OS_AddThread(void(*task)(void),
     Free = Free->next;
   }
   else{
-    return 0;
+    return 0; // No free tcb
   }
   EndCritical(sr);
 
@@ -709,9 +711,9 @@ void GROUP1_IRQHandler(void){
     if(BumpTask != NULL){
       BumpTask(status);
     } else {
-     
+      crashed =1;
       bump_collision();
-      TogglePB20();
+    
     }
   }
   //if(GPIOA->CPU_INT.RIS&(1<<28)){ // PA28

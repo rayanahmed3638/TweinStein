@@ -333,7 +333,6 @@ void Robot(void){
       sum += data;             // average
     }
     Distance2 = sum>>3;  // in mm
-    // FileDump(Distance,Distance2);
     
     int32_t angle = arctan(((int32_t)(Distance*1414) - (int32_t)(Distance2*1000))/(int32_t)(224+Distance2)) - angle_ref;
 
@@ -350,19 +349,14 @@ void Robot(void){
     // ST7735_Message(1, 0, "intend_angle: ", intend_angle);
     // ST7735_Message(1, 1, "curr_angle: ", angle);
     int32_t e_a = intend_angle - angle;
-    int32_t mComm = ((e_a * kp_a) / 10) + (((e_a - prevE_A) * kd_a) / 10);
+    int32_t steeringAngle = ((e_a * kp_a) / 10) + (((e_a - prevE_A) * kd_a) / 10);
     prevE_A = e_a;
     // ST7735_Message(1, 3, "Motor command: ", mComm);
     // ST7735_Message(1, 2, "angle: ", angle);
-    CanMessage_t motorCommand;
-    motorCommand.MessageType = CMD_MOTOR;
-    motorCommand.Field1 = 9000;
-    motorCommand.Field2 = 9000;
-    motorCommand.Field3 = mComm;
+    CAN_SetMotors(9000, 9000, steeringAngle);
+
     // ST7735_Message(1, 2, "Steering: ", motorCommand.Field3);
-    // ST7735_Message(1,0,"wall_angle =", angle);
-    uint8_t status = CAN_SendMessage(0, &motorCommand);
-    // OS_Sleep(delay);
+    // ST7735_Message(1,0,"wall_angle =", angle);    // OS_Sleep(delay);
   }
   EndFileDump();
   UART_OutString("done.\n\r>");
@@ -499,59 +493,7 @@ void DFT(void){ int i;  int32_t real,imag,mag;
   }
 }
 
-void ServoThread(void){
-  uint16_t duties[] = {1000,2000,3000,4000, 5000, 6000, 7000, 8000, 9000};
-
-  uint32_t stepSize = 25; // will change for testing
-  uint32_t delay = 1000 ; // will change
-  uint32_t position = 3000;
-  int32_t direction = 1;
-  int duty = 0;
-  while (LaunchPad_InS2() != (1<<21)){} // Wait for S2 to be pressed
-
-  while(1){
-    position += direction * stepSize;
-    if( position >=3250){
-      position = 3250;
-      direction = -1;
-    }
-    if(position <=2750){
-      position = 2750;
-      direction = 1;
-    }
-
-    ST7735_Message(1, 2, "Steering: ", position);
-
-    CanMessage_t motorCommand;
-    motorCommand.MessageType = CMD_MOTOR;
-    motorCommand.Field1 = duties[duty];
-    motorCommand.Field2 = duties[8-duty];
-    motorCommand.Field3 = position;
-    int status = CAN_SendMessage(0, &motorCommand);
-    OS_Sleep(delay);
-
-    duty++;
-    if (duty > 8){
-      duty = 0;
-    }
-  }
-}
-
 //--------------end of Task 5-----------------------------
-
-// blind send right now, assumes globals are set
-uint16_t steering, left, right;
-uint8_t needsData;
-void CanSendThread(void){
-  while (1){
-    if (needsData){
-      CAN_SendOSData((uint16_t)MaxJitter3);
-    }
-    else{
-      CAN_SetMotors(left, right, steering);
-    }
-  }
-}
 
 
 //*******************final user main DEMONTRATE THIS TO TA**********
@@ -901,23 +843,6 @@ int Testmain3(void){   // Testmain3
 
   OS_Launch(TIME_2MS); // doesn't return, interrupts enabled in here
   return 0;            // this never executes
-}
-
-
-/*
-testing the robot and servos below
-*/
-int TestMain4(void){
-  OS_Init();        // initialize, disable interrupts
-  Logic_Init();
-  CAN_Init();
-  CAN_EnableInterrupts(1);
-
-  OS_AddThread(&VirusDetector, 128, 3);
-  OS_AddThread(&ServoThread, 128, 1);
-
-  OS_Launch(TIME_2MS);
-  return 0; // should not return
 }
 
 

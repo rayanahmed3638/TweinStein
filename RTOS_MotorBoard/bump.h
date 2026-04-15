@@ -47,6 +47,8 @@ void bump_disable_interuppts(void);
  */
 void bump_collision(void);
 
+void Set_Servo(int16_t angle);
+
 /**
  * @brief register a callback function for collision events
  * 

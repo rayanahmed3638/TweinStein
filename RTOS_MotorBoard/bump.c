@@ -64,3 +64,16 @@ void bump_collision(){
     PWMA0_Break();
     PWMA1_Break();
 }
+
+void Set_Servo(int16_t angle){
+   uint32_t center = 3100;
+
+    if(angle > 30)  angle = 30;
+    if(angle < -30) angle = -30;
+
+    
+    int32_t offset = (angle * 1000) / 30;
+    uint32_t ServoDuty = center + offset;
+ 
+    PWMG6_SetDuty(ServoDuty);
+}

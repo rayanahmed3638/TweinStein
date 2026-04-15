@@ -57,6 +57,7 @@
 // **** OS must run disk_timerproc();  at 1000Hz, every 1ms *****
 uint32_t Running;           // true while robot is running
 uint32_t NumCreated;   // number of foreground threads created
+extern uint8_t crashed;
 
 //---------------------User debugging-----------------------
 
@@ -524,25 +525,36 @@ void ServoThread(void){
   SSD1306_OutString("Waiting for CAN...");
   while(1){
     // Wait for data
-    CanMessage_t motorCommand;
-    CAN_ReadMessage(&motorCommand);
-    if (motorCommand.MessageType == CMD_MOTOR){
-      PWMA0_Forward(motorCommand.Field1);
-      PWMA1_Backward(motorCommand.Field2);
-      PWMG6_SetDuty(motorCommand.Field3);
-      LeftMotorDuty = motorCommand.Field1;
-      RightMotorDuty = motorCommand.Field2;
-      Steering = motorCommand.Field3;
+    CanMessage_t message;
+    CAN_ReadMessage(&message);
+    if (message.MessageType == CMD_MOTOR){
+      if(crashed){
+        Set_Servo(0);
+        PWMA1_Backward(3000); // we need to fix this cause the CAN read is blocking 
+        PWMA0_Forward(3000);
+        OS_Sleep(500);       // reverse for 500ms
+        PWMA0_Break();
+        PWMA1_Break();
+        crashed = 0; 
+      }
+      else{
+        PWMA0_Backward(message.Field1);
+        PWMA1_Forward(message.Field2);
+        Set_Servo(message.Field3);
+        LeftMotorDuty = message.Field1;
+        RightMotorDuty = message.Field2;
+        Steering = message.Field3;
+      }
       // Display received command on SSD1306
       SSD1306_SetCursor(0,1);
       SSD1306_OutString("CAN cmd received    ");
       SSD1306_SetCursor(0,2);
       SSD1306_OutString("L=     R=          ");
-      SSD1306_SetCursor(2,2); SSD1306_OutUDec(motorCommand.Field1);
-      SSD1306_SetCursor(9,2); SSD1306_OutUDec(motorCommand.Field2);
+      SSD1306_SetCursor(2,2); SSD1306_OutUDec(message.Field1);
+      SSD1306_SetCursor(9,2); SSD1306_OutUDec(message.Field2);
       SSD1306_SetCursor(0,3);
       SSD1306_OutString("Servo=             ");
-      SSD1306_SetCursor(6,3); SSD1306_OutUDec(motorCommand.Field3);
+      SSD1306_SetCursor(6,3); SSD1306_OutUDec(message.Field3);
     }
     // Show WiFi status if available
     if(WifiStatus[0]){
