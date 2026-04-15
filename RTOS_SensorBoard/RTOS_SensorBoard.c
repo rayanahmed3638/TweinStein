@@ -6,7 +6,7 @@
  */
 
 #define angle_ref 5 // degrees "0"
-#define dist_ref 130 // mm
+#define dist_ref 0 // mm
 #define kp_d 1
 #define kd_d 4
 #define kp_a 5
@@ -191,10 +191,10 @@ void DAS(void){
   thisTime = OS_Time();          // current time, 12.5 ns
   FilterOutput = Filter(input);
   DistanceRaw = FilterOutput;
-  Distance = IRDistance_Convert(FilterOutput,0) / 2; // in mm
+  Distance = IRDistance_Right(FilterOutput);   // in mm
   L_FilterOutput = Filter2(L_input);
   L_DistanceRaw = L_FilterOutput;
-  L_Distance = IRDistance_Convert(L_FilterOutput, 0) / 2; // in mm
+  L_Distance = IRDistance_Left(L_FilterOutput); // in mm
   if(Running){    // finite time run
     FilterWork++;        // calculation finished
     if(FilterWork>2){    // ignore timing of first interrupt
@@ -253,21 +253,26 @@ uint32_t DataLost;        // data sent by Producer, but not received by Consumer
 uint32_t Distance2;       // mm
 int32_t x[16],ReX[16],ImX[16];           // input and output arrays for FFT
 
-//******** Producer *************** 
+Sema4_t TFLuna3Ready;  // signaled by Producer  (right, TFLuna3) after global update
+Sema4_t TFLuna2Ready;  // signaled by Producer2 (left,  TFLuna2) after global update
+
+//******** Producer ***************
 // The Producer in this lab will be called from the UART2 ISR
 // The TFLuna2 samples distance at about 100 Hz
 // sends data to the consumer, runs periodically at 100Hz
 void Producer(uint32_t data){
   if(Running){           // finite time run
     TogglePA16();        // toggle PA16
-    Distance2 = Median5((int32_t) data);
+    Distance2 = data;
+    OS_bSignal(&TFLuna3Ready);
     TogglePA16();        // toggle PA16
   }
 }
 
 void Producer2(uint32_t data){
   if(Running){
-    L_Distance2 = Median5_2((int32_t) data);
+    L_Distance2 = data;
+    OS_bSignal(&TFLuna2Ready);
   }
 }
 
@@ -333,32 +338,45 @@ void Robot(void){
   while(1) {
     elapsed = OS_MsTime() - prevTime;
     prevTime = OS_MsTime();
-    OS_Sleep(10);  // pace at ~100 Hz matching TFLuna sample rate
+    uint32_t d2 = 0;
+    uint32_t ld2 = 0;
+    for (uint8_t i = 0; i < 8; i++) {
+      OS_bWait(&TFLuna3Ready);  // block until right-side TFLuna has fresh data
+      OS_bWait(&TFLuna2Ready);  // block until left-side TFLuna has fresh data
+
+      __disable_irq();
+      d2 += Distance2;
+      ld2 += L_Distance2;
+      __enable_irq();
+    }
+    d2 >>= 3;
+    ld2 >>= 3;
 
     __disable_irq();
-    uint32_t d_ir  = Distance;
-    uint32_t d2    = Distance2;
-    uint32_t ld_ir = L_Distance;
-    uint32_t ld2   = L_Distance2;
+    uint32_t d_ir  = DistanceRaw;
+    uint32_t ld_ir = L_DistanceRaw;
     __enable_irq();
-
+    
     int32_t angle   = arctan(((int32_t)(d_ir*1414)  - (int32_t)(d2*1000)) /(int32_t)(224+d2))  - angle_ref;
     int32_t L_angle = arctan(((int32_t)(ld_ir*1414) - (int32_t)(ld2*1000))/(int32_t)(224+ld2));
 
     int32_t realDist   = (d_ir  * cosine(angle))   / 1000;
     int32_t L_realDist = (ld_ir * cosine(L_angle)) / 1000;
-    int32_t e_d = realDist - dist_ref;
+    int32_t e_d = realDist - L_realDist - dist_ref;
 
-    ST7735_Message(1, 0, "dist: ", d_ir);
-    ST7735_Message(1, 3, "distReal: ", realDist);
+    ST7735_Message(1, 0, "distR: ", d_ir);
+    ST7735_Message(1, 1, "distL: ", ld_ir);
+    ST7735_Message(1, 2, "TF_R: ", d2);
+    ST7735_Message(1, 3, "TF_L: ", ld2);
     int32_t intend_angle = ((kp_d * e_d) / 10) + ((kd_d * (e_d - prevError)) / 10);
     prevError = e_d;
-    ST7735_Message(1, 1, "curr_angle: ", angle);
+    ST7735_Message(1, 4, "curr_angle: ", angle);
+    ST7735_Message(1, 5, "curr_angleL: ", L_angle);
     int32_t e_a = intend_angle - angle;
     int32_t steeringAngle = ((e_a * kp_a) / 10) + (((e_a - prevE_A) * kd_a) / 10);
     prevE_A = e_a;
 
-    CAN_SetMotors(9000, 9000, steeringAngle);
+    CAN_SetMotors(0, 0, steeringAngle);
   }
   EndFileDump();
   UART_OutString("done.\n\r>");
@@ -513,6 +531,8 @@ int realmain(void){     // realmain
   // hardware init
   ADC_InitDual(ADC0, 1, 7, ADCVREF_VDDA);  // ch1=right IR (PA26), ch7=left IR (PA22)
 	OS_InitSemaphore(&LCDFree, 1);
+  OS_InitSemaphore(&TFLuna3Ready, 0);  // Robot blocks until ISR produces first sample
+  OS_InitSemaphore(&TFLuna2Ready, 0);
 
   // CAN init for sending motor commands to motor board
   CAN_Init();

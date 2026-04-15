@@ -69,5 +69,20 @@ policies, either expressed or implied, of the FreeBSD Project.
  */
 int32_t IRDistance_Convert(int32_t adcSample, uint32_t sensor);
 
+/**
+ * Convert ADC sample to distance for the right IR sensor (PA26, ADC0 ch1)<br>
+ * Calibrated from IR_Calib.xlsx: d(mm) = 76921/(adc - 495) + 20, RMSE~4.6mm
+ * @param adcSample is the 12-bit ADC sample 0 to 4095
+ * @return distance in mm, or 305 if beyond ~12-inch calibrated range
+ */
+int32_t IRDistance_Right(int32_t adcSample);
+
+/**
+ * Convert ADC sample to distance for the left IR sensor (PA22, ADC0 ch7)<br>
+ * Calibrated from IR_Calib.xlsx: d(mm) = 83326/(adc - 498) + 18, RMSE~7.5mm
+ * @param adcSample is the 12-bit ADC sample 0 to 4095
+ * @return distance in mm, or 305 if beyond ~12-inch calibrated range
+ */
+int32_t IRDistance_Left(int32_t adcSample);
 
 #endif /* IRDISTANCE_H_ */
