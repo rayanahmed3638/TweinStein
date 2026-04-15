@@ -6,10 +6,11 @@
  */
 
 #define angle_ref 5 // degrees "0"
-#define dist_ref 70 // mm
-#define kp_d 5
-#define kd_d 2
-#define kp_a 1
+#define dist_ref 130 // mm
+#define kp_d 1
+#define kd_d 4
+#define kp_a 5
+#define kd_a 2
 
 #include <ti/devices/msp/msp.h>
 #include "../inc/LaunchPad.h"
@@ -116,6 +117,35 @@ int32_t arctan(int32_t ratio_x1000) {
     return (ratio_x1000 < 0) ? -(int32_t)lo : (int32_t)lo;
 }
 //-----------end of Arctan Lookup Table--------------------
+
+//--------------Cosine Lookup Table-----------------------
+// CosTable[i] = cos(i degrees) * 1000, for i = 0 to 90
+const uint32_t CosTable[91] = {
+    1000,  999,  999,  998,  997,  996,  994,  992,  990,  987,  // 0-9
+     984,  981,  978,  974,  970,  965,  961,  956,  951,  945,  // 10-19
+     939,  933,  927,  920,  913,  906,  898,  891,  882,  874,  // 20-29
+     866,  857,  848,  838,  829,  819,  809,  798,  788,  777,  // 30-39
+     766,  754,  743,  731,  719,  707,  694,  681,  669,  656,  // 40-49
+     642,  629,  615,  601,  587,  573,  559,  544,  529,  515,  // 50-59
+     500,  484,  469,  453,  438,  422,  406,  390,  374,  358,  // 60-69
+     342,  325,  309,  292,  276,  258,  242,  224,  208,  190,  // 70-79
+     173,  156,  139,  121,  104,   87,   69,   52,   35,   17,  // 80-89
+       0                                                          // 90
+};
+// cosine: cosine of angle using table lookup
+// Input:  angle in degrees (-180 to 180)
+// Output: cos(angle) * 1000 (e.g., 1000 for 0 deg, 0 for 90 deg, -1000 for 180 deg)
+int32_t cosine(int32_t angle_deg) {
+    // Normalize to [0, 360)
+    while (angle_deg < 0)   angle_deg += 360;
+    while (angle_deg >= 360) angle_deg -= 360;
+    // Use symmetry: cos is even and periodic
+    if (angle_deg <= 90)  return  (int32_t)CosTable[angle_deg];
+    if (angle_deg <= 180) return -(int32_t)CosTable[180 - angle_deg];
+    if (angle_deg <= 270) return -(int32_t)CosTable[angle_deg - 180];
+    return                        (int32_t)CosTable[360 - angle_deg];
+}
+//-----------end of Cosine Lookup Table--------------------
 
 uint32_t Checks; // number of times virus checking has run
 uint32_t ChecksWork; // number of checks in 10 second
@@ -276,6 +306,10 @@ void FileDump(uint32_t data, uint32_t data2){
 // outputs: none
 char FileName[8]="robot0";
 
+uint32_t elapsed = 0;
+int32_t prevError = 0;
+int32_t prevE_A = 0;
+uint32_t prevTime = 0;
 void Robot(void){   
   DataLost = 0;       // new run with no lost data 
   FilterWork = 0;
@@ -288,11 +322,11 @@ void Robot(void){
   UART_OutString("Robot running...");
   StartFileDump(FileName);
 
-  int32_t prevError = 0;
-
   while(1) { 
     uint32_t data;      // in mm, from TFLuna
     uint32_t sum=0;
+    elapsed = OS_MsTime() - prevTime;
+    prevTime = OS_MsTime();
     for(int t = 0; t < 8; t++){   // collect 16 TFLuna samples
       data = OS_Fifo_Get();    // get from producer, mm
       x[t] = data;
@@ -300,26 +334,34 @@ void Robot(void){
     }
     Distance2 = sum>>3;  // in mm
     // FileDump(Distance,Distance2);
+    
+    int32_t angle = arctan(((int32_t)(Distance*1414) - (int32_t)(Distance2*1000))/(int32_t)(224+Distance2)) - angle_ref;
 
-    int32_t e_d = Distance - dist_ref;
+    int32_t realDist = (Distance * cosine(angle)) / 1000;
+    int32_t e_d = realDist - dist_ref;
+    // if (abs(e_d) < 50) {
+      // e_d = 0;
+    // }
+    // ST7735_Message(1, 0, "dist: ", Distance);
+    // ST7735_Message(1, 3, "distReal: ", realDist);
     // ST7735_Message(1, 2, "dist. err: ", e_d);
     int32_t intend_angle = ((kp_d * e_d) / 10) + ((kd_d * (e_d - prevError)) / 10);
-    // ST7735_Message(1, 0, "intend_angle: ", intend_angle);
-    int32_t angle = arctan(((int32_t)(Distance*1414) - (int32_t)(Distance2*1000))/(int32_t)(224+Distance2)) - angle_ref;
-    // ST7735_Message(1, 1, "curr_angle: ", angle);
     prevError = e_d;
-
-    int32_t mComm = (intend_angle - angle) * kp_a;
+    // ST7735_Message(1, 0, "intend_angle: ", intend_angle);
+    // ST7735_Message(1, 1, "curr_angle: ", angle);
+    int32_t e_a = intend_angle - angle;
+    int32_t mComm = ((e_a * kp_a) / 10) + (((e_a - prevE_A) * kd_a) / 10);
+    prevE_A = e_a;
     // ST7735_Message(1, 3, "Motor command: ", mComm);
     // ST7735_Message(1, 2, "angle: ", angle);
     CanCommand_t motorCommand;
     motorCommand.CommandType = CMD_MOTOR;
-    motorCommand.Field1 = 5000;
-    motorCommand.Field2 = 5000;
+    motorCommand.Field1 = 9000;
+    motorCommand.Field2 = 9000;
     motorCommand.Field3 = mComm;
     // ST7735_Message(1, 2, "Steering: ", motorCommand.Field3);
     // ST7735_Message(1,0,"wall_angle =", angle);
-    int status = CAN_SendCommand(0, &motorCommand);
+    uint8_t status = CAN_SendCommand(0, &motorCommand);
     // OS_Sleep(delay);
   }
   EndFileDump();
