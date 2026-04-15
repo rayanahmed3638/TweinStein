@@ -31,6 +31,11 @@
 			<locationURI>PARENT-1-PROJECT_LOC/inc/ADC.c</locationURI>
 		</link>
 		<link>
+			<name>CAN.c</name>
+			<type>1</type>
+			<locationURI>PARENT-1-PROJECT_LOC/RTOS_Labs_common/CAN.c</locationURI>
+		</link>
+		<link>
 			<name>Clock.c</name>
 			<type>1</type>
 			<locationURI>PARENT-1-PROJECT_LOC/inc/Clock.c</locationURI>
