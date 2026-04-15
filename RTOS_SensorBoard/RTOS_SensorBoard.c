@@ -22,6 +22,7 @@
 #include "../RTOS_Labs_common/IRDistance.h"
 #include "../RTOS_Labs_common/LPF.h"
 #include "../RTOS_Labs_common/DFT16.h"
+#include "../RTOS_Labs_common/TFLuna2.h"
 #include "../RTOS_Labs_common/TFLuna3.h"
 #include "../RTOS_Labs_common/OS.h"
 #include "../RTOS_Labs_common/eDisk.h"
@@ -157,7 +158,9 @@ uint32_t ChecksWork; // number of checks in 10 second
 #define FS 1000              // DAS sampling
 #define RUNLENGTH (10000)     // display results and quit when FilterWork==RUNLENGTH
 
-uint32_t FilterOutput,Distance, DistanceRaw;
+uint32_t FilterOutput, Distance, DistanceRaw;
+uint32_t L_FilterOutput, L_Distance, L_DistanceRaw;
+uint32_t L_Distance2;
 Sema4_t LCDFree;  // SDC and LCD sharing
 
 uint32_t FilterWork;
@@ -177,18 +180,21 @@ void Jitter3_Init(void){
 // samples PA24 Center ADC0_3, calculates Distance
 // inputs:  none
 // outputs: none
-void DAS(void){ 
-  uint32_t input;  
+void DAS(void){
+  uint32_t input, L_input;
   static uint32_t LastTime;      // time at previous ADC sample, 12.5 ns
   uint32_t thisTime;             // time at current ADC sample, 12.5 ns
   uint32_t jitter;               // time between measured and expected, 12.5 ns
   TogglePA8();                   // toggle PA8
-  input = ADC0_In();             // channel 3 set when calling ADC0_Init
+  ADC_InDual(ADC0, &input, &L_input); // ch1=right IR (PA26), ch7=left IR (PA22)
   TogglePA8();                   // toggle PA8
   thisTime = OS_Time();          // current time, 12.5 ns
   FilterOutput = Filter(input);
-  DistanceRaw = FilterOutput; 
+  DistanceRaw = FilterOutput;
   Distance = IRDistance_Convert(FilterOutput,0) / 2; // in mm
+  L_FilterOutput = Filter2(L_input);
+  L_DistanceRaw = L_FilterOutput;
+  L_Distance = IRDistance_Convert(L_FilterOutput, 0) / 2; // in mm
   if(Running){    // finite time run
     FilterWork++;        // calculation finished
     if(FilterWork>2){    // ignore timing of first interrupt
@@ -251,16 +257,18 @@ int32_t x[16],ReX[16],ImX[16];           // input and output arrays for FFT
 // The Producer in this lab will be called from the UART2 ISR
 // The TFLuna2 samples distance at about 100 Hz
 // sends data to the consumer, runs periodically at 100Hz
-void Producer(uint32_t data){ 
+void Producer(uint32_t data){
   if(Running){           // finite time run
     TogglePA16();        // toggle PA16
     Distance2 = Median5((int32_t) data);
     TogglePA16();        // toggle PA16
-    if(OS_Fifo_Put(Distance2) == 0){ // send to consumer
-      DataLost++;
-    } 
-    TogglePA16();        // toggle PA16
-  } 
+  }
+}
+
+void Producer2(uint32_t data){
+  if(Running){
+    L_Distance2 = Median5_2((int32_t) data);
+  }
 }
 
 void Display(void); 
@@ -322,41 +330,35 @@ void Robot(void){
   UART_OutString("Robot running...");
   StartFileDump(FileName);
 
-  while(1) { 
-    uint32_t data;      // in mm, from TFLuna
-    uint32_t sum=0;
+  while(1) {
     elapsed = OS_MsTime() - prevTime;
     prevTime = OS_MsTime();
-    for(int t = 0; t < 8; t++){   // collect 16 TFLuna samples
-      data = OS_Fifo_Get();    // get from producer, mm
-      x[t] = data;
-      sum += data;             // average
-    }
-    Distance2 = sum>>3;  // in mm
-    
-    int32_t angle = arctan(((int32_t)(Distance*1414) - (int32_t)(Distance2*1000))/(int32_t)(224+Distance2)) - angle_ref;
+    OS_Sleep(10);  // pace at ~100 Hz matching TFLuna sample rate
 
-    int32_t realDist = (Distance * cosine(angle)) / 1000;
+    __disable_irq();
+    uint32_t d_ir  = Distance;
+    uint32_t d2    = Distance2;
+    uint32_t ld_ir = L_Distance;
+    uint32_t ld2   = L_Distance2;
+    __enable_irq();
+
+    int32_t angle   = arctan(((int32_t)(d_ir*1414)  - (int32_t)(d2*1000)) /(int32_t)(224+d2))  - angle_ref;
+    int32_t L_angle = arctan(((int32_t)(ld_ir*1414) - (int32_t)(ld2*1000))/(int32_t)(224+ld2));
+
+    int32_t realDist   = (d_ir  * cosine(angle))   / 1000;
+    int32_t L_realDist = (ld_ir * cosine(L_angle)) / 1000;
     int32_t e_d = realDist - dist_ref;
-    // if (abs(e_d) < 50) {
-      // e_d = 0;
-    // }
-    // ST7735_Message(1, 0, "dist: ", Distance);
-    // ST7735_Message(1, 3, "distReal: ", realDist);
-    // ST7735_Message(1, 2, "dist. err: ", e_d);
+
+    ST7735_Message(1, 0, "dist: ", d_ir);
+    ST7735_Message(1, 3, "distReal: ", realDist);
     int32_t intend_angle = ((kp_d * e_d) / 10) + ((kd_d * (e_d - prevError)) / 10);
     prevError = e_d;
-    // ST7735_Message(1, 0, "intend_angle: ", intend_angle);
-    // ST7735_Message(1, 1, "curr_angle: ", angle);
+    ST7735_Message(1, 1, "curr_angle: ", angle);
     int32_t e_a = intend_angle - angle;
     int32_t steeringAngle = ((e_a * kp_a) / 10) + (((e_a - prevE_A) * kd_a) / 10);
     prevE_A = e_a;
-    // ST7735_Message(1, 3, "Motor command: ", mComm);
-    // ST7735_Message(1, 2, "angle: ", angle);
-    CAN_SetMotors(9000, 9000, steeringAngle);
 
-    // ST7735_Message(1, 2, "Steering: ", motorCommand.Field3);
-    // ST7735_Message(1,0,"wall_angle =", angle);    // OS_Sleep(delay);
+    CAN_SetMotors(9000, 9000, steeringAngle);
   }
   EndFileDump();
   UART_OutString("done.\n\r>");
@@ -509,7 +511,7 @@ int realmain(void){     // realmain
   OS_Fifo_Init(256);    // ***note*** 4 is not big enough*****
 
   // hardware init
-  ADC0_Init(1,ADCVREF_VDDA);  // PA24 Center ADC0_3, sampling in DAS()
+  ADC_InitDual(ADC0, 1, 7, ADCVREF_VDDA);  // ch1=right IR (PA26), ch7=left IR (PA22)
 	OS_InitSemaphore(&LCDFree, 1);
 
   // CAN init for sending motor commands to motor board
@@ -532,6 +534,12 @@ int realmain(void){     // realmain
   NumCreated += OS_AddThread(&VirusDetector,128,2);
  
   LPF_Init7(500,7);
+  TFLuna2_Init(&Producer2);
+  TFLuna2_Format_Standard_mm();
+  TFLuna2_Frame_Rate();
+  TFLuna2_SaveSettings();
+  TFLuna2_System_Reset();
+
   TFLuna3_Init(&Producer);
   TFLuna3_Format_Standard_mm(); // format in mm
   TFLuna3_Frame_Rate();         // 100 samples/sec
