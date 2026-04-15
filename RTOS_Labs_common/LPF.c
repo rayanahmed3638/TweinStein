@@ -388,12 +388,25 @@ static int32_t x[6]; // this MACQ needs twice memory allocation
 static int32_t y[6];
 static uint32_t n=3;   // 3, 4, or 5
   n++;
-  if(n==6) n=3;     
+  if(n==6) n=3;
   x[n] = x[n-3] = data;  // two copies of new data
   y[n] = (256*(x[n]+x[n-2])-476*x[n-1]+471*y[n-1]-251*y[n-2]+128)/256;
   y[n-3] = y[n];         // two copies of filter outputs too
   return y[n];
-} 
+}
+
+// Independent second instance of the 60-Hz notch IIR filter (e.g. for left IR sensor)
+int32_t Filter2(int32_t data){
+static int32_t x[6];
+static int32_t y[6];
+static uint32_t n=3;
+  n++;
+  if(n==6) n=3;
+  x[n] = x[n-3] = data;
+  y[n] = (256*(x[n]+x[n-2])-476*x[n-1]+471*y[n-1]-251*y[n-2]+128)/256;
+  y[n-3] = y[n];
+  return y[n];
+}
 
 int32_t mx7[7]; // last 7 inputs
 int32_t f7[7]; // found flag
@@ -429,6 +442,41 @@ int32_t Median5(int32_t x){ int i,j; int32_t max;
   }
   return max; // median is third highest
 }
+// Independent second instance of Median5 with separate MACQ (avoids sharing mx7/f7 with Median5)
+int32_t mx7_2[7];
+int32_t f7_2[7];
+int32_t Median5_2(int32_t x){ int i,j; int32_t max;
+  for(i=3; i>=0; i--){
+    mx7_2[i+1] = mx7_2[i];
+    f7_2[i]=1;
+  }
+  f7_2[5] = 1;
+  mx7_2[0] = x;
+  max = mx7_2[0]; j=0;
+  for(i=1; i<7; i++){
+    if(mx7_2[i] > max){
+      max = mx7_2[i];
+      j = i;
+    }
+  }
+  f7_2[j] = 0;
+  max = INT32_MIN;
+  for(i=0; i<7; i++){
+    if((mx7_2[i] > max)&&f7_2[i]){
+      max = mx7_2[i];
+      j = i;
+    }
+  }
+  f7_2[j] = 0;
+  max = INT32_MIN;
+  for(i=0; i<7; i++){
+    if((mx7_2[i] > max)&&f7_2[i]){
+      max = mx7_2[i];
+    }
+  }
+  return max;
+}
+
 // 16 usec running at 80 MHz
 int32_t Median7(int32_t x){ int i,j; int32_t max;
   for(i=5; i>=0; i--){

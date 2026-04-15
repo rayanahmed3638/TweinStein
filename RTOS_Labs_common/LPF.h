@@ -201,6 +201,15 @@ int32_t Median(int32_t newdata);
 int32_t Median5(int32_t newdata);
 
 /**
+ * 5-wide non recursive Median filter, second independent instance<br>
+ * Uses separate internal arrays from Median5 — safe to call simultaneously.
+ * @param newdata new ADC data
+ * @return result filter output
+ * @brief  Median filter (second instance)
+ */
+int32_t Median5_2(int32_t newdata);
+
+/**
  * 7-wide non recursive Median filter <br>
  * Called with new data at sampling rate
  * @param newdata new ADC data
@@ -218,3 +227,13 @@ int32_t Median7(int32_t newdata);
  * @brief  60-Hz notch high-Q, IIR filter
  */
  int32_t Filter(int32_t data);
+
+/**
+ * Independent second instance of the 60-Hz notch IIR filter<br>
+ * Identical coefficients to Filter(), but separate internal state.<br>
+ * Use for a second simultaneous signal (e.g. left IR sensor).
+ * @param data new ADC data
+ * @return result filter output
+ * @brief  60-Hz notch high-Q, IIR filter (second instance)
+ */
+ int32_t Filter2(int32_t data);
