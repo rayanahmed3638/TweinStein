@@ -62,6 +62,7 @@ TCB_t* RunPt; // Can't be static since osasm.s needs it
 TCB_t* ReadyLists[NUMPRIORITIES]; // Linked list heads for each priority
 TCB_t* RunPts[NUMPRIORITIES]; // Keeping track of last run thread for each priority
 TCB_t* Sleeping; // Linked list of all sleeping threads
+TCB_t* Free; // Linked list of all free TCBs (makes addThread faster)
 Event_t PeriodicTasks[MAXEVENTS];
 Mailbox_t OS_Mailbox;
 Fifo_t OS_Fifo;
@@ -117,7 +118,18 @@ void OS_Init(void){
   // Initialize all tcbs as free
   for (int threadID = 0; threadID < MAXNUMTHREADS; threadID++){
     tcbs[threadID].state = FREE;
+    if (threadID == MAXNUMTHREADS-1){
+      tcbs[threadID].next = NULL;
+    }
+    else{
+      tcbs[threadID].next = &tcbs[threadID+1];
+    }
+    // set thread ID
+    tcbs[threadID].id = threadID;
   }
+
+  // Start Free linked list
+  Free = &tcbs[0];
 
   // Initialize all ready lists as empty and last ran as NULL
   for (int priority = 0; priority < NUMPRIORITIES; priority++){
@@ -371,15 +383,16 @@ int OS_AddThread(void(*task)(void),
   }
   
   int threadID = 0;
-  // Find the first free tcb (critical section)
   long sr = StartCritical();
-  while (threadID < MAXNUMTHREADS && tcbs[threadID].state == ACTIVE){
-    ++threadID;
+  // Find the first free tcb (critical section)
+  if (Free != NULL){
+    threadID = Free->id;
+    Free = Free->next;
   }
-  EndCritical(sr);
-  if (threadID == MAXNUMTHREADS){ // maximum threads reached, cannot create new
+  else{
     return 0;
   }
+  EndCritical(sr);
 
   // Mark thread as active
   tcbs[threadID].state = ACTIVE;
@@ -389,9 +402,6 @@ int OS_AddThread(void(*task)(void),
 
   // Mark thread as not blocked
   tcbs[threadID].blocked = NULL;
-
-  // set thread ID
-  tcbs[threadID].id = threadID;
 
   // set thread priority
   tcbs[threadID].priority = priority;
@@ -870,6 +880,9 @@ void OS_Kill(void){
   threadKilled->next->prev = threadKilled->prev;
   
   threadKilled->state = FREE; //label killed thread as free
+  // Add to free list
+  threadKilled->next = Free;
+  Free = threadKilled;
   
   OS_Suspend(); // Will clear SysTick and pend PendSV
 

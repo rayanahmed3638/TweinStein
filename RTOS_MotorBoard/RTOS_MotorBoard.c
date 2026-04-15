@@ -456,7 +456,7 @@ uint32_t BumpStatus;
 void BuildLogData(void){
   sprintf(LOGDATA,
     "GET /php/json/write.php?"
-    "name=Twigglesteins"
+    "name=Tweinstein"
     "&bump=%u"
     "&steering=%u"
     "&right=%u"

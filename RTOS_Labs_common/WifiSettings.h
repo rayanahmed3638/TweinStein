@@ -20,8 +20,8 @@ enum Menu_Status {RX=0, TX, CONNECTED};
 #define SOFTAP        0
 
 // Access Point Parameters
-#define SSID_NAME  "SURYALAPTOP 7404"
-#define PASSKEY    "boomer15"
+#define SSID_NAME  "utexas-iot"
+#define PASSKEY    "87943064235102835779"
 
 //#define SSID_NAME  "utexas-iot"
 //#define PASSKEY    ""
