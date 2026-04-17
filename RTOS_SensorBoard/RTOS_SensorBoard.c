@@ -5,6 +5,8 @@
  * A two-pin female header is required on the LaunchPad TP10(XDS_VCC) and TP9(!RSTN)
  */
 
+#define USE_MEDIAN_FILTER 0  // 1 = median (Median5 per sample, 5-sample pace), 0 = mean (8-sample average)
+
 #define angle_ref 5 // degrees "0"
 #define dist_ref 0 // mm
 #define kp_d 1
@@ -22,6 +24,7 @@
 #include "../RTOS_Labs_common/IRDistance.h"
 #include "../RTOS_Labs_common/LPF.h"
 #include "../RTOS_Labs_common/DFT16.h"
+#include "../RTOS_Labs_common/TFLuna1.h"
 #include "../RTOS_Labs_common/TFLuna2.h"
 #include "../RTOS_Labs_common/TFLuna3.h"
 #include "../RTOS_Labs_common/OS.h"
@@ -62,24 +65,24 @@ uint32_t NumCreated;   // number of foreground threads created
 //---------------------User debugging-----------------------
 
 // Unused sensor board pins, made outputs for debugging
-// Jumper J14 select PA9
+// Jumper J14 select PB23
 // Jumper J15 select PA16
 void Logic_Init(void){
   IOMUX->SECCFG.PINCM[PA8INDEX] = (uint32_t) 0x00000081;
-  IOMUX->SECCFG.PINCM[PA9INDEX] = (uint32_t) 0x00000081;
+  IOMUX->SECCFG.PINCM[PB23INDEX] = (uint32_t) 0x00000081;
   IOMUX->SECCFG.PINCM[PA16INDEX] = (uint32_t) 0x00000081;
   IOMUX->SECCFG.PINCM[PB4INDEX] = (uint32_t) 0x00000081;
   IOMUX->SECCFG.PINCM[PB1INDEX] = (uint32_t) 0x00000081;
   IOMUX->SECCFG.PINCM[PB20INDEX] = (uint32_t) 0x00000081;
-  GPIOA->DOE31_0 |= (1<<8)|(1<<9)|(1<<16);
-  GPIOB->DOE31_0 |= (1<<4)|(1<<1)|(1<<20);
+  GPIOA->DOE31_0 |= (1<<8)|(1<<16);
+  GPIOB->DOE31_0 |= (1<<4)|(1<<1)|(1<<20)|(1<<23);
 }
 #define TogglePA8() (GPIOA->DOUTTGL31_0 = (1<<8))
 #define SetPA8() (GPIOA->DOUTSET31_0 = (1<<8))
 #define ClrPA8() (GPIOA->DOUTCLR31_0 = (1<<8))
-#define TogglePA9() (GPIOA->DOUTTGL31_0 = (1<<9))
-#define SetPA9() (GPIOA->DOUTSET31_0 = (1<<9))
-#define ClrPA9() (GPIOA->DOUTCLR31_0 = (1<<9))
+#define TogglePB23() (GPIOB->DOUTTGL31_0 = (1<<23))
+#define SetPB23() (GPIOB->DOUTSET31_0 = (1<<23))
+#define ClrPB23() (GPIOB->DOUTCLR31_0 = (1<<23))
 #define TogglePA16() (GPIOA->DOUTTGL31_0 = (1<<16))
 #define TogglePB4() (GPIOB->DOUTTGL31_0 = (1<<4))
 #define SetPB4() (GPIOB->DOUTSET31_0 = (1<<4))
@@ -116,6 +119,18 @@ int32_t arctan(int32_t ratio_x1000) {
         else hi = mid;
     }
     return (ratio_x1000 < 0) ? -(int32_t)lo : (int32_t)lo;
+}
+// tangent: tangent of angle using TanTable (same table as arctan)
+// Input:  angle in degrees
+// Output: tan(angle) * 1000; returns 57290 (max) for angles near 90/270 (undefined)
+// tan has period 180: sign positive in [0,89] and [180,269], negative in [91,179] and [271,359]
+int32_t tangent(int32_t angle_deg) {
+    while (angle_deg < 0)    angle_deg += 360;
+    while (angle_deg >= 360) angle_deg -= 360;
+    uint32_t mod = (uint32_t)angle_deg % 180;
+    if (mod <= 89)  return  (int32_t)TanTable[mod];
+    if (mod == 90)  return  57290; // clamp — approaches +∞ before, -∞ after
+    return -(int32_t)TanTable[180 - mod]; // mod 91–179: negative, use symmetry
 }
 //-----------end of Arctan Lookup Table--------------------
 
@@ -161,6 +176,7 @@ uint32_t ChecksWork; // number of checks in 10 second
 uint32_t FilterOutput, Distance, DistanceRaw;
 uint32_t L_FilterOutput, L_Distance, L_DistanceRaw;
 uint32_t L_Distance2;
+uint32_t FrontDist = 1000; // mm, from TFLuna1 (front-facing); default far
 Sema4_t LCDFree;  // SDC and LCD sharing
 
 uint32_t FilterWork;
@@ -226,13 +242,13 @@ uint32_t DataLost;     // data sent by Producer, but not received by Consumer
 // ***********PA28Push*************
 int ArmCrash=1;
 void HandleCrash(void){
-  TogglePA9();
-  TogglePA9();
+  TogglePB23();
+  TogglePB23();
   uint32_t myId = OS_Id(); 
   ST7735_Message(1,0,"myID        =",myId); 
   ST7735_Message(1,1,"*Crash*,  t= ",OS_MsTime());
   ArmCrash=1;
-  TogglePA9();
+  TogglePB23();
   OS_Kill();
 } 
 void PA28Push(void){ // real time task
@@ -263,7 +279,11 @@ Sema4_t TFLuna2Ready;  // signaled by Producer2 (left,  TFLuna2) after global up
 void Producer(uint32_t data){
   if(Running){           // finite time run
     TogglePA16();        // toggle PA16
+#if USE_MEDIAN_FILTER
+    Distance2 = (uint32_t)Median5((int32_t)data);
+#else
     Distance2 = data;
+#endif
     OS_bSignal(&TFLuna3Ready);
     TogglePA16();        // toggle PA16
   }
@@ -271,9 +291,23 @@ void Producer(uint32_t data){
 
 void Producer2(uint32_t data){
   if(Running){
+#if USE_MEDIAN_FILTER
+    L_Distance2 = (uint32_t)Median5_2((int32_t)data);
+#else
     L_Distance2 = data;
+#endif
     OS_bSignal(&TFLuna2Ready);
   }
+}
+
+uint32_t FrontCount = 0; // debug: increments each time TFLuna1 ISR delivers data
+void Producer3(uint32_t data){
+#if USE_MEDIAN_FILTER
+  FrontDist = (uint32_t)Median((int32_t)data);
+#else
+  FrontDist = data;
+#endif
+  FrontCount++;
 }
 
 void Display(void); 
@@ -323,6 +357,7 @@ uint32_t elapsed = 0;
 int32_t prevError = 0;
 int32_t prevE_A = 0;
 uint32_t prevTime = 0;
+uint32_t startTime = 0;
 void Robot(void){   
   DataLost = 0;       // new run with no lost data 
   FilterWork = 0;
@@ -334,16 +369,31 @@ void Robot(void){
   NumCreated += OS_AddThread(&Display,128,0); 
   UART_OutString("Robot running...");
   StartFileDump(FileName);
-
+  OS_ClearMsTime();
+  startTime = OS_MsTime();
   while(1) {
+    if (OS_MsTime() - startTime > 60000) {
+      while (1) {
+        CAN_SetMotors(0, 0, 0);
+      }
+    }
     elapsed = OS_MsTime() - prevTime;
     prevTime = OS_MsTime();
+#if USE_MEDIAN_FILTER
+    for (uint8_t i = 0; i < 5; i++) {
+      OS_bWait(&TFLuna3Ready);
+      OS_bWait(&TFLuna2Ready);
+    }
+    __disable_irq();
+    uint32_t d2  = Distance2;
+    uint32_t ld2 = L_Distance2;
+    __enable_irq();
+#else
     uint32_t d2 = 0;
     uint32_t ld2 = 0;
     for (uint8_t i = 0; i < 8; i++) {
       OS_bWait(&TFLuna3Ready);  // block until right-side TFLuna has fresh data
       OS_bWait(&TFLuna2Ready);  // block until left-side TFLuna has fresh data
-
       __disable_irq();
       d2 += Distance2;
       ld2 += L_Distance2;
@@ -351,12 +401,18 @@ void Robot(void){
     }
     d2 >>= 3;
     ld2 >>= 3;
+#endif
 
     __disable_irq();
-    uint32_t d_ir  = DistanceRaw;
-    uint32_t ld_ir = L_DistanceRaw;
+    uint32_t d_ir  = Distance * 2;
+    uint32_t ld_ir = L_Distance * 2;
     __enable_irq();
-    
+
+    // IR correction: if TFLuna sees open space (>600mm) and reads significantly
+    // more than the IR, the IR is past its calibrated range — clamp to 305mm.
+    if (d2  > 600 && d2  > d_ir  + 150) d_ir  = 305;
+    if (ld2 > 600 && ld2 > ld_ir + 150) ld_ir = 305;
+
     int32_t angle   = arctan(((int32_t)(d_ir*1414)  - (int32_t)(d2*1000)) /(int32_t)(224+d2))  - angle_ref;
     int32_t L_angle = arctan(((int32_t)(ld_ir*1414) - (int32_t)(ld2*1000))/(int32_t)(224+ld2));
 
@@ -364,19 +420,58 @@ void Robot(void){
     int32_t L_realDist = (ld_ir * cosine(L_angle)) / 1000;
     int32_t e_d = realDist - L_realDist - dist_ref;
 
-    ST7735_Message(1, 0, "distR: ", d_ir);
-    ST7735_Message(1, 1, "distL: ", ld_ir);
-    ST7735_Message(1, 2, "TF_R: ", d2);
-    ST7735_Message(1, 3, "TF_L: ", ld2);
+    // ST7735_Message(1, 0, "distR: ", d_ir);
+    // ST7735_Message(1, 1, "distL: ", ld_ir);
+    // ST7735_Message(1, 2, "TF_R: ", d2);
+    // ST7735_Message(1, 3, "TF_L: ", ld2);
+    // ST7735_Message(1, 6, "FrontDist: ", FrontDist);
+    // ST7735_Message(1, 7, "FrontCnt:  ", FrontCount);
     int32_t intend_angle = ((kp_d * e_d) / 10) + ((kd_d * (e_d - prevError)) / 10);
     prevError = e_d;
-    ST7735_Message(1, 4, "curr_angle: ", angle);
-    ST7735_Message(1, 5, "curr_angleL: ", L_angle);
+    // ST7735_Message(1, 4, "curr_angle: ", angle);
+    // ST7735_Message(1, 5, "curr_angleL: ", L_angle);
     int32_t e_a = intend_angle - angle;
     int32_t steeringAngle = ((e_a * kp_a) / 10) + (((e_a - prevE_A) * kd_a) / 10);
     prevE_A = e_a;
 
-    CAN_SetMotors(0, 0, steeringAngle);
+    // Amplify steering when approaching a front wall.
+    // TFLuna1 < 400mm: scale by 400/FrontDist (hyperbolic), clamped at 4x.
+    // The 45° TFLunas already encode turn direction, so amplification alone is enough.
+    __disable_irq();
+    int32_t front = (int32_t)FrontDist;
+    __enable_irq();
+    // ST7735_Message(1, 0, "Front: ", front);
+    // static int16_t total = 0;
+    if(front < 600){
+      // if (steeringAngle > 0) total++;
+      // else if (steeringAngle < 0) total--;
+      steeringAngle *= 50;
+    }
+    // else {
+    //   total = 0;
+    // }
+
+    if (steeringAngle < -25) steeringAngle = -25;
+    else if (steeringAngle > 25) steeringAngle = 25;
+
+    // int32_t tanAng = tangent(steeringAngle);
+    // tanAng = (7 * tanAng) >> 1;
+    // if (steeringAngle <= 0) {
+    //   CAN_SetMotors(9000, 9000 * (6000 - tanAng) / (6000 + tanAng), steeringAngle);
+    // }
+    // else {
+    //   CAN_SetMotors(9000 * (6000 + tanAng) / (6000 - tanAng), 9000, steeringAngle);
+    // }
+    if (steeringAngle <= -20) {
+      CAN_SetMotors(8000, 5000, steeringAngle);
+    }
+    else if (steeringAngle >= 20) {
+      CAN_SetMotors(5000, 8000, steeringAngle);
+    }
+    else {
+      CAN_SetMotors(8000, 8000, steeringAngle);
+    }
+
   }
   EndFileDump();
   UART_OutString("done.\n\r>");
@@ -554,6 +649,12 @@ int realmain(void){     // realmain
   NumCreated += OS_AddThread(&VirusDetector,128,2);
  
   LPF_Init7(500,7);
+  TFLuna1_Init(&Producer3);
+  TFLuna1_Format_Standard_mm();
+  TFLuna1_Frame_Rate();
+  TFLuna1_SaveSettings();
+  TFLuna1_System_Reset();
+
   TFLuna2_Init(&Producer2);
   TFLuna2_Format_Standard_mm();
   TFLuna2_Frame_Rate();
@@ -622,9 +723,9 @@ void TestDisk(void){  DSTATUS result;  uint32_t block;  int i; uint8_t n;
   UART_OutString("Reading blocks\n\r");
   M = 1;  // reseed, start over to get the same sequence
   for(block = 0; block < MAXBLOCKS; block++){
-    SetPA9();     // PA9 high for one block read
+    SetPB23();     // PB23 high for one block read
     if(eDisk_ReadBlock(buffer,block))diskError("eDisk_ReadBlock",block); // read from disk
-    ClrPA9();
+    ClrPB23();
     for(i=0;i<512;i++){
       n = Random8(); // same pseudo random sequence
       if(buffer[i] != (0xFF&n)){

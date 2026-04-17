@@ -528,14 +528,21 @@ void ServoThread(void){
     CanMessage_t message;
     CAN_ReadMessage(&message);
     if (message.MessageType == CMD_MOTOR){
+      if (message.Field1 == 0 || message.Field2 == 0) {
+        if (message.Field1 == 0) PWMA0_Break();
+        if (message.Field2 == 0) PWMA1_Break();
+        continue;
+      }
       if(crashed){
+        bump_disable_interuppts();
         Set_Servo(0);
-        PWMA1_Backward(3000); // we need to fix this cause the CAN read is blocking 
-        PWMA0_Forward(3000);
-        OS_Sleep(500);       // reverse for 500ms
+        PWMA1_Backward(5000); // we need to fix this cause the CAN read is blocking 
+        PWMA0_Forward(5000);
+        OS_Sleep(1000);       // reverse for 500ms
         PWMA0_Break();
         PWMA1_Break();
         crashed = 0; 
+        bump_enable_interuppts();
       }
       else{
         PWMA0_Backward(message.Field1);
