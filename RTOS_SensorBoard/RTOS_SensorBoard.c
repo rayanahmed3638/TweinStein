@@ -347,6 +347,45 @@ void FileDump(uint32_t data, uint32_t data2){
   OS_bSignal(&LCDFree);
   ClrPB4();
 }
+
+typedef int32_t fixed_t;
+typedef enum { ir_right,
+               ir_left,
+               tf_left,
+               tf_middle,
+               tf_right,
+               throttle_left_prev,
+               throttle_right_prev,
+               steering_prev,
+               angle_left,
+               angle_right,
+               NUM_INPUTS } input_t;
+
+typedef enum {throttle_left,
+              throttle_right,
+              steering,
+              NUM_OUTPUTS} output_t;
+
+fixed_t Model_Inputs[NUM_INPUTS];
+fixed_t Model_Outputs[NUM_OUTPUTS];
+const fixed_t Model_Weights[NUM_OUTPUTS][NUM_INPUTS] = {{0}}; // training will set weights
+const fixed_t Model_Bias[NUM_OUTPUTS] = {0}; // training will set bias
+
+static inline fixed_t fixed_mul(fixed_t x, fixed_t y){
+  return ((int64_t)x*y) >> 16;
+}
+
+// Simple matrix multiply + addition with weights and bias
+void Model_Inference(void){
+  for (int r = 0; r < NUM_OUTPUTS; r++){
+    Model_Outputs[r] = 0;
+    for (int c = 0; c < NUM_INPUTS; c++){
+      Model_Outputs[r] += fixed_mul(Model_Weights[r][c],Model_Inputs[c]);
+    }
+    Model_Outputs[r] += Model_Bias[r];
+  }
+}
+
 //******** Robot *************** 
 // foreground Consumer thread, accepts data from producer
 // inputs:  none
@@ -420,56 +459,38 @@ void Robot(void){
     int32_t L_realDist = (ld_ir * cosine(L_angle)) / 1000;
     int32_t e_d = realDist - L_realDist - dist_ref;
 
-    // ST7735_Message(1, 0, "distR: ", d_ir);
-    // ST7735_Message(1, 1, "distL: ", ld_ir);
-    // ST7735_Message(1, 2, "TF_R: ", d2);
-    // ST7735_Message(1, 3, "TF_L: ", ld2);
-    // ST7735_Message(1, 6, "FrontDist: ", FrontDist);
-    // ST7735_Message(1, 7, "FrontCnt:  ", FrontCount);
     int32_t intend_angle = ((kp_d * e_d) / 10) + ((kd_d * (e_d - prevError)) / 10);
     prevError = e_d;
-    // ST7735_Message(1, 4, "curr_angle: ", angle);
-    // ST7735_Message(1, 5, "curr_angleL: ", L_angle);
+
     int32_t e_a = intend_angle - angle;
     int32_t steeringAngle = ((e_a * kp_a) / 10) + (((e_a - prevE_A) * kd_a) / 10);
     prevE_A = e_a;
 
-    // Amplify steering when approaching a front wall.
-    // TFLuna1 < 400mm: scale by 400/FrontDist (hyperbolic), clamped at 4x.
-    // The 45° TFLunas already encode turn direction, so amplification alone is enough.
     __disable_irq();
     int32_t front = (int32_t)FrontDist;
     __enable_irq();
-    // ST7735_Message(1, 0, "Front: ", front);
-    // static int16_t total = 0;
+
+    uint16_t throttle = 9000;
+
     if(front < 600){
-      // if (steeringAngle > 0) total++;
-      // else if (steeringAngle < 0) total--;
-      steeringAngle *= 50;
+      throttle = 7000;
+      int32_t urgency = (600-front) >> 4; // 0 at 600mm, 37 at 0mm (clamped to 30 later)
+      steeringAngle = (ld2 > d2) ? -urgency : urgency; // turn left if more room on left
     }
-    // else {
-    //   total = 0;
-    // }
 
-    if (steeringAngle < -25) steeringAngle = -25;
-    else if (steeringAngle > 25) steeringAngle = 25;
+    // Clamp steering angle
+    if (steeringAngle < -30) steeringAngle = -30;
+    else if (steeringAngle > 30) steeringAngle = 30;
 
-    // int32_t tanAng = tangent(steeringAngle);
-    // tanAng = (7 * tanAng) >> 1;
-    // if (steeringAngle <= 0) {
-    //   CAN_SetMotors(9000, 9000 * (6000 - tanAng) / (6000 + tanAng), steeringAngle);
-    // }
-    // else {
-    //   CAN_SetMotors(9000 * (6000 + tanAng) / (6000 - tanAng), 9000, steeringAngle);
-    // }
-    if (steeringAngle <= -20) {
-      CAN_SetMotors(8000, 5000, steeringAngle);
+    // Differential steering
+    if (steeringAngle <= -15) {
+      CAN_SetMotors(throttle, throttle - 2000, steeringAngle);
     }
-    else if (steeringAngle >= 20) {
-      CAN_SetMotors(5000, 8000, steeringAngle);
+    else if (steeringAngle >= 15) {
+      CAN_SetMotors(throttle - 2000, throttle, steeringAngle);
     }
     else {
-      CAN_SetMotors(8000, 8000, steeringAngle);
+      CAN_SetMotors(throttle, throttle, steeringAngle);
     }
 
   }

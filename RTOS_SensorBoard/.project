@@ -98,7 +98,7 @@
 		<link>
 			<name>TFLuna1.c</name>
 			<type>1</type>
-			<location>/Users/adipu/lab-7-tweinstein-1/RTOS_Labs_common/TFLuna1.c</location>
+			<locationURI>PARENT-1-PROJECT_LOC/RTOS_Labs_common/TFLuna1.c</locationURI>
 		</link>
 		<link>
 			<name>TFLuna2.c</name>
