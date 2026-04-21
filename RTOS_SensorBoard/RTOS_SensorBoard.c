@@ -9,8 +9,10 @@
 
 #define angle_ref 5 // degrees "0"
 #define dist_ref 0 // mm
+
+// PD weights
 #define kp_d 1
-#define kd_d 4
+#define kd_d 2
 #define kp_a 5
 #define kd_a 2
 
@@ -327,14 +329,15 @@ void diskError(char *errtype, int32_t code){
 }
 void StartFileDump(char *pt){
   OS_bWait(&LCDFree);
+  eFile_Delete(pt); // Overwrite the file
   eFile_Create(pt); // ignore error if file already exists
   if(eFile_WOpen(pt))  diskError("eFile_WOpen",0);
-  if(eFile_WriteString("time(s)\tdist(mm)\tdist(mm)\n\r"))  diskError("eFile_WriteString",0);
+  if(eFile_WriteString("time_ms,ir_r,ir_l,tf_r,tf_l,tf_front,throttle_l,throttle_r,steering\n"))  diskError("eFile_WriteString",0);
   OS_bSignal(&LCDFree);
 }
 void EndFileDump(){
   OS_bWait(&LCDFree);
-  if(eFile_WClose())            diskError("eFile_WClose",0);
+  if(eFile_WClose())           // diskError("eFile_WClose",0);
   OS_bSignal(&LCDFree);
 }
 
@@ -346,6 +349,33 @@ void FileDump(uint32_t data, uint32_t data2){
   eFile_WriteUDec(data2); eFile_WriteString("\n\r");
   OS_bSignal(&LCDFree);
   ClrPB4();
+}
+
+#define NUMCOLS 9
+// Dump row into csv
+int FileDumpRow(int32_t* row){
+  OS_bWait(&LCDFree);
+
+  for (int i = 0; i < NUMCOLS; i++){
+    if (eFile_WriteSDec(row[i])){
+      OS_bSignal(&LCDFree);
+      return 1;
+    } 
+    if (i < NUMCOLS - 1){
+      if(eFile_Write(',')){
+        OS_bSignal(&LCDFree);
+        return 1;
+      }
+    }
+  }
+  
+  if (eFile_Write('\n')){
+    OS_bSignal(&LCDFree);
+    return 1;
+  }
+
+  OS_bSignal(&LCDFree);
+  return 0;
 }
 
 typedef int32_t fixed_t;
@@ -409,13 +439,9 @@ void Robot(void){
   UART_OutString("Robot running...");
   StartFileDump(FileName);
   OS_ClearMsTime();
+  //while (LaunchPad_InS2() == 0); // REMOVE AFTER DATA COLLECTION
   startTime = OS_MsTime();
   while(1) {
-    if (OS_MsTime() - startTime > 60000) {
-      while (1) {
-        CAN_SetMotors(0, 0, 0);
-      }
-    }
     elapsed = OS_MsTime() - prevTime;
     prevTime = OS_MsTime();
 #if USE_MEDIAN_FILTER
@@ -473,7 +499,7 @@ void Robot(void){
     uint16_t throttle = 9000;
 
     if(front < 600){
-      throttle = 7000;
+      throttle -= 2000;
       int32_t urgency = (600-front) >> 4; // 0 at 600mm, 37 at 0mm (clamped to 30 later)
       steeringAngle = (ld2 > d2) ? -urgency : urgency; // turn left if more room on left
     }
@@ -483,16 +509,23 @@ void Robot(void){
     else if (steeringAngle > 30) steeringAngle = 30;
 
     // Differential steering
+    uint16_t throttle_l = throttle, throttle_r = throttle;
     if (steeringAngle <= -15) {
-      CAN_SetMotors(throttle, throttle - 2000, steeringAngle);
+      throttle_r -= 2000;
     }
     else if (steeringAngle >= 15) {
-      CAN_SetMotors(throttle - 2000, throttle, steeringAngle);
+      throttle_l -= 2000;
     }
-    else {
-      CAN_SetMotors(throttle, throttle, steeringAngle);
-    }
+    CAN_SetMotors(throttle_l, throttle_r, steeringAngle);
 
+    // Data collection
+    // int32_t row[NUMCOLS] = {OS_MsTime(), d_ir, ld_ir, d2, ld2, front, throttle_l, throttle_r, steeringAngle};
+    // if (FileDumpRow(row)){
+    //   EndFileDump();
+    //   while (1){ // Stop robot when we can no longer log
+    //     CAN_SetMotors(0, 0, 0);
+    //   }
+    // }
   }
   EndFileDump();
   UART_OutString("done.\n\r>");
@@ -993,6 +1026,46 @@ int Testmain3(void){   // Testmain3
 
   OS_Launch(TIME_2MS); // doesn't return, interrupts enabled in here
   return 0;            // this never executes
+}
+
+
+//*****************Dump robot0 over UART*************************
+// Press S2 to stream the contents of "robot0" out UART0.
+// Capture on host with log_serial.sh (at repo root).
+// Does NOT format the disk — preserves logged data.
+void DumpRobotFile(void){
+  PrintFile3("robot0");
+  Running = 0; // allow re-trigger via S2
+  OS_Kill();
+}
+
+void StartDumpRobotFile(void){
+  if(Running == 0){
+    Running = 1;
+    NumCreated += OS_AddThread(&DumpRobotFile, 128, 1);
+  }
+}
+
+int DumpRobotFileMain(void){
+  OS_Init();
+  Logic_Init();
+  Running = 0;
+  OS_InitSemaphore(&LCDFree, 1);
+
+  OS_AddPeriodicThread(&disk_timerproc, 1, 0);
+  OS_AddS2Task(&StartDumpRobotFile, 1);
+  OS_AddPA28Task(&StartDumpRobotFile, 1);
+
+  NumCreated = 0;
+
+  NumCreated = OS_AddThread(&VirusDetector, 128, 7);
+
+  if(eFile_Init())  diskError("eFile_Init", 0);
+  if(eFile_Mount()) diskError("eFile_Mount", 0);
+
+  UART_OutString("\n\rReady. Press S2 (PB21) to dump robot0.\n\r");
+  OS_Launch(TIME_2MS);
+  return 0;
 }
 
 
