@@ -480,7 +480,7 @@ void WifiTask(void){
     OS_Kill();
   }
   ESP8266_GetVersionNumber();
-  if(!ESP8266_Connect(true)){
+  if(!ESP8266_Connect(false)){
     UART_OutString("\r\n---Failure connecting to access point\r\n");
     OS_Kill();
   }
@@ -517,21 +517,29 @@ void WifiTask(void){
 }
 //--------------end of Task 6-----------------------------
 
+#define STOP_TIME 180
+#define STOP_TIME_MS (STOP_TIME*1000)
 
 void ServoThread(void){
   SSD1306_SetCursor(0,0);
   SSD1306_OutString("Motor Board");
   SSD1306_SetCursor(0,1);
   SSD1306_OutString("Waiting for CAN...");
+  uint32_t startTime = OS_MsTime();
   while(1){
     // Wait for data
     CanMessage_t message;
     CAN_ReadMessage(&message);
     if (message.MessageType == CMD_MOTOR){
-      if (WifiStatus[0] != 'g') { PWMA0_Break(); PWMA1_Break(); continue; }  // Stop when server says red
+      if (WifiStatus[7] != 'G' && WifiStatus[7] != 'g') { PWMA0_Break(); PWMA1_Break(); startTime = OS_MsTime(); continue; }  // Stop when server says red
       if (message.Field1 == 0 || message.Field2 == 0) {
         if (message.Field1 == 0) PWMA0_Break();
         if (message.Field2 == 0) PWMA1_Break();
+        continue;
+      }
+      if (OS_MsTime() - startTime >= STOP_TIME_MS){
+        PWMA0_Break();
+        PWMA1_Break();
         continue;
       }
       if(crashed){
@@ -623,7 +631,7 @@ int realmain(void){     // realmain
 
   // Init and connect happen inside WifiTask thread (requires OS scheduler running)
   AddThreadStart = OS_Time();
-  NumCreated += OS_AddThread(&WifiTask, 128, 1);
+  NumCreated += OS_AddThread(&WifiTask, 128, 0);
   AddThreadElapsed = OS_Time() - AddThreadStart;
   NumCreated += OS_AddThread(&VirusDetector,128,3);
   Jitter3_Init();
