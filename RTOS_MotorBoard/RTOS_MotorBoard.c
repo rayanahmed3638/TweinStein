@@ -528,6 +528,7 @@ void ServoThread(void){
     CanMessage_t message;
     CAN_ReadMessage(&message);
     if (message.MessageType == CMD_MOTOR){
+      if (WifiStatus[0] != 'g') { PWMA0_Break(); PWMA1_Break(); continue; }  // Stop when server says red
       if (message.Field1 == 0 || message.Field2 == 0) {
         if (message.Field1 == 0) PWMA0_Break();
         if (message.Field2 == 0) PWMA1_Break();
