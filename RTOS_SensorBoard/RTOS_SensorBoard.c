@@ -33,6 +33,7 @@
 #include "../RTOS_Labs_common/eDisk.h"
 #include "../RTOS_Labs_common/eFile.h"
 #include "../RTOS_Labs_common/CAN.h"
+#include "Model.h"
 #include <stdio.h>
 // PA10 is UART0 Tx    index 20 in IOMUX PINCM table
 // PA11 is UART0 Rx    index 21 in IOMUX PINCM table
@@ -378,44 +379,6 @@ int FileDumpRow(int32_t* row){
   return 0;
 }
 
-typedef int32_t fixed_t;
-typedef enum { ir_right,
-               ir_left,
-               tf_left,
-               tf_middle,
-               tf_right,
-               throttle_left_prev,
-               throttle_right_prev,
-               steering_prev,
-               angle_left,
-               angle_right,
-               NUM_INPUTS } input_t;
-
-typedef enum {throttle_left,
-              throttle_right,
-              steering,
-              NUM_OUTPUTS} output_t;
-
-fixed_t Model_Inputs[NUM_INPUTS];
-fixed_t Model_Outputs[NUM_OUTPUTS];
-const fixed_t Model_Weights[NUM_OUTPUTS][NUM_INPUTS] = {{0}}; // training will set weights
-const fixed_t Model_Bias[NUM_OUTPUTS] = {0}; // training will set bias
-
-static inline fixed_t fixed_mul(fixed_t x, fixed_t y){
-  return ((int64_t)x*y) >> 16;
-}
-
-// Simple matrix multiply + addition with weights and bias
-void Model_Inference(void){
-  for (int r = 0; r < NUM_OUTPUTS; r++){
-    Model_Outputs[r] = 0;
-    for (int c = 0; c < NUM_INPUTS; c++){
-      Model_Outputs[r] += fixed_mul(Model_Weights[r][c],Model_Inputs[c]);
-    }
-    Model_Outputs[r] += Model_Bias[r];
-  }
-}
-
 //******** Robot *************** 
 // foreground Consumer thread, accepts data from producer
 // inputs:  none
@@ -432,7 +395,7 @@ void Robot(void){
   FilterWork = 0;
   Running = 1;
   Jitter3_Init();
-
+  Model_Inputs[steering_prev] = 32768; // Initialize to 0 degrees
   OS_ClearMsTime();    
   OS_Fifo_Init(256);
   NumCreated += OS_AddThread(&Display,128,0); 
@@ -516,6 +479,34 @@ void Robot(void){
     else if (steeringAngle >= 15) {
       throttle_l -= 2000;
     }
+
+    // Normalize inputs to model
+    // Want to place inputs in range [0, 65536], or [0,1] in fixed point
+    Model_Inputs[ir_right] = Model_Normalize(d_ir, CAP_IR);
+    Model_Inputs[ir_left] = Model_Normalize(ld_ir, CAP_IR);
+    Model_Inputs[tf_left] = Model_Normalize(ld2, CAP_TFLUNA);
+    Model_Inputs[tf_middle] = Model_Normalize(front, CAP_TFLUNA);
+    Model_Inputs[tf_right] = Model_Normalize(d2, CAP_TFLUNA);
+    // Clamp angles
+    if (L_angle < -CAP_ANGLE) L_angle = -CAP_ANGLE;
+    if (L_angle > CAP_ANGLE) L_angle = CAP_ANGLE;
+    if (angle < -CAP_ANGLE) angle = -CAP_ANGLE;
+    if (angle > CAP_ANGLE) angle = CAP_ANGLE;
+    // Normalize angles
+    Model_Inputs[angle_left] = (L_angle + CAP_ANGLE) << (16 - CAP_ANGLE_POW - 1);
+    Model_Inputs[angle_right] = (angle + CAP_ANGLE) << (16 - CAP_ANGLE_POW - 1);
+
+    // Call model inference
+    Model_Inference();
+
+    // Apply model output to PD controller
+    Model_ApplyResidual(&throttle_l, &throttle_r, &steeringAngle);
+
+    // Wait till after residuals are applied, so input to next is an accurate reflection
+    Model_Inputs[throttle_left_prev] = Model_Normalize(throttle_l, CAP_THROTTLE);
+    Model_Inputs[throttle_right_prev] = Model_Normalize(throttle_r, CAP_THROTTLE);
+    Model_Inputs[steering_prev] = Model_NormalizeSigned(steeringAngle, CAP_STEERING);
+
     CAN_SetMotors(throttle_l, throttle_r, steeringAngle);
 
     // Data collection
