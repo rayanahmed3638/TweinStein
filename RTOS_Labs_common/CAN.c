@@ -603,3 +603,10 @@ int CAN_SendOSData(uint16_t jitter){
   OsData.Field1 = jitter;
   return CAN_SendMessage(0, &OsData);
 }
+
+int CAN_TellCrashed(int16_t steeringAngle){
+  CanMessage_t CrashEvent;
+  CrashEvent.MessageType = CMD_CRASH;
+  CrashEvent.Field1 = steeringAngle;
+  return CAN_SendMessage(0, &CrashEvent);
+}

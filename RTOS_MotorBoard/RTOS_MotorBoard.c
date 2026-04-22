@@ -575,9 +575,9 @@ void ServoThread(void){
       if(crashed){
         bump_disable_interuppts();
         Set_Servo(0);
-        PWMA1_Backward(5000); 
-        PWMA0_Forward(5000);
-        OS_Sleep(1000); 
+        PWMA1_Backward(9999); 
+        PWMA0_Forward(9999);
+        OS_Sleep(500); 
         PWMA0_Break();
         PWMA1_Break();
         crashed = 0; 
@@ -601,6 +601,17 @@ void ServoThread(void){
       SSD1306_SetCursor(0,3);
       SSD1306_OutString("Servo=             ");
       SSD1306_SetCursor(6,3); SSD1306_OutUDec(message.Field3);
+    }
+    else if (message.MessageType == CMD_CRASH){ // Handle "crash" message from sensorboard (lidar too close)
+      bump_disable_interuppts();
+      Set_Servo(-message.Field1); // backing up so we want to turn wheels opposite direction
+      PWMA1_Backward(9999); 
+      PWMA0_Forward(9999);
+      OS_Sleep(100); // Small adjustment
+      PWMA0_Break();
+      PWMA1_Break();
+      crashed = 0; 
+      bump_enable_interuppts();
     }
     // Show WiFi status if available
     if(WifiStatus[0]){

@@ -36,6 +36,7 @@
 typedef uint16_t MessageType_t;
 #define CMD_MOTOR 0
 #define DATA_STATS 1
+#define CMD_CRASH 2
 
 typedef struct{
    MessageType_t MessageType;
@@ -71,6 +72,8 @@ void CAN_ReadMessage(CanMessage_t* message);
 int CAN_SetMotors(uint16_t Duty_L, uint16_t Duty_R, int16_t SteeringAngle);
 
 int CAN_SendOSData(uint16_t jitter);
+
+int CAN_TellCrashed(int16_t steeringAngle);
 
 #endif //  __CAN_H__
 

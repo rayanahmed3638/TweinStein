@@ -467,17 +467,24 @@ void Robot(void){
     __enable_irq();
 
     uint16_t throttle = 9999; // max throttle
+    // Follow the gap kicks in when turn comes up
     if(front < 800){
       if (front < 400) throttle -= 1000;
       if (front < 200) throttle -= 1000;
       if (front < 100) throttle -= 2000;
-      int32_t urgency = (800-front) >> 3; // 0 at 600mm, 75 at 0mm (clamped to 53)
+      int32_t urgency = (800-front) >> 3;
       steeringAngle = (ld2 > d2) ? -urgency : urgency; // turn left if more room on left
     }
 
     // Clamp steering angle
     if (steeringAngle < -35) steeringAngle = -35;
     else if (steeringAngle > 35) steeringAngle = 35;
+
+    if (front < 150){ // too close, tell motors we crashed
+      ST7735_Message(1, 1, "AHHH", 0);
+      CAN_TellCrashed(steeringAngle);
+      continue;
+    }
 
     // Differential steering
     uint16_t throttle_l = throttle, throttle_r = throttle;
@@ -535,7 +542,6 @@ void Robot(void){
       eFile_DirNext(&name, &size);
       ST7735_Message(1, 0, "File dump complete ", 0);
       ST7735_Message(1, 1, "File size: ", size);
-      ST7735_Message(1, 2, "gz: ", gz);
       while (1){ // Stop robot when we can no longer log
         CAN_SetMotors(0, 0, 0);
       }
@@ -1159,7 +1165,7 @@ int main(void) { 			// main
   __disable_irq();
   Clock_Init80MHz(0); // no clock out to pin
   LaunchPad_Init();   // LaunchPad_Init must be called once and before other I/O initializations
-  realmain();
+  DumpRobotFileMain();
 }
 
 
