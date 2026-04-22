@@ -1001,15 +1001,15 @@ int calib_main(void){
   while(1){
     PWMG6_SetDuty(3200);
     SSD1306_SetCursor(0, 0);
-    SSD1306_OutString("Set Duty to 3150");
+    SSD1306_OutString("Set Duty to 3200");
     debounce_S2();
     PWMG6_SetDuty(2000);
     SSD1306_SetCursor(0, 0);
-    SSD1306_OutString("Set Duty to 1900");
+    SSD1306_OutString("Set Duty to 2000");
     debounce_S2();
     PWMG6_SetDuty(4400);
     SSD1306_SetCursor(0, 0);
-    SSD1306_OutString("Set Duty to 4200");
+    SSD1306_OutString("Set Duty to 4400");
     debounce_S2();
   }
   
