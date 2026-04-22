@@ -5,8 +5,8 @@
 
 #define CAP_IR 305 // mm
 #define CAP_TFLUNA 1000 // mm
-#define CAP_THROTTLE 9000 // pwm
-#define CAP_STEERING 30 // degrees
+#define CAP_THROTTLE 9999 // pwm
+#define CAP_STEERING 35 // degrees
 #define CAP_ANGLE 64 // degrees
 #define CAP_ANGLE_POW 6 // 2^6 = 64
 #define CAP_DELTA_STEERING 10

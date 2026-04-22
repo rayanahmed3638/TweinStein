@@ -459,7 +459,7 @@ void BuildLogData(void){
     "GET /php/json/write.php?"
     "name=Tweinstein"
     "&bump=%u"
-    "&steering=%u"
+    "&steering=%d"
     "&right=%u"
     "&left=%u"
     "&systick=%u"

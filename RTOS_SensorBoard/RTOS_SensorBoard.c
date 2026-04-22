@@ -467,22 +467,24 @@ void Robot(void){
     __enable_irq();
 
     uint16_t throttle = 9999; // max throttle
-    if(front < 600){
-      throttle -= 2000;
-      int32_t urgency = (600-front) >> 3; // 0 at 600mm, 75 at 0mm (clamped to 53)
+    if(front < 800){
+      if (front < 400) throttle -= 1000;
+      if (front < 200) throttle -= 1000;
+      if (front < 100) throttle -= 2000;
+      int32_t urgency = (800-front) >> 3; // 0 at 600mm, 75 at 0mm (clamped to 53)
       steeringAngle = (ld2 > d2) ? -urgency : urgency; // turn left if more room on left
     }
 
     // Clamp steering angle
-    if (steeringAngle < -53) steeringAngle = -53;
-    else if (steeringAngle > 53) steeringAngle = 53;
+    if (steeringAngle < -35) steeringAngle = -35;
+    else if (steeringAngle > 35) steeringAngle = 35;
 
     // Differential steering
     uint16_t throttle_l = throttle, throttle_r = throttle;
-    if (steeringAngle <= -30) {
+    if (steeringAngle <= -15) {
       throttle_r -= 2000;
     }
-    else if (steeringAngle >= 30) {
+    else if (steeringAngle >= 15) {
       throttle_l -= 2000;
     }
 
@@ -528,7 +530,12 @@ void Robot(void){
     int32_t row[NUMCOLS] = {OS_MsTime(), d_ir, ld_ir, d2, ld2, front, throttle_l, throttle_r, steeringAngle, gz, ax, ay};
     if (FileDumpRow(row)){
       EndFileDump();
+      char* name;
+      unsigned long size;
+      eFile_DirNext(&name, &size);
       ST7735_Message(1, 0, "File dump complete ", 0);
+      ST7735_Message(1, 1, "File size: ", size);
+      ST7735_Message(1, 2, "gz: ", gz);
       while (1){ // Stop robot when we can no longer log
         CAN_SetMotors(0, 0, 0);
       }
@@ -678,10 +685,7 @@ void IMU_Task(void){
     // Debugging
     // ST7735_Message(1, 1, "AccelX: ", IMU_AccelX);
     // ST7735_Message(1, 2, "AccelY: ", IMU_AccelY);
-    // ST7735_Message(1, 3, "AccelZ: ", IMU_AccelZ);
-    // ST7735_Message(1, 4, "GyroX: ", IMU_GyroX);
-    // ST7735_Message(1, 5, "GyroY: ", IMU_GyroY);
-    // ST7735_Message(1, 6, "GyroZ: ", IMU_GyroZ);
+    // ST7735_Message(1, 3, "GyroZ: ", IMU_GyroZ);
 
     OS_Sleep(20); // ~50 Hz
   }
@@ -710,8 +714,9 @@ int realmain(void){     // realmain
   CAN_Init();
   CAN_EnableInterrupts(1);
 
+  Clock_Delay1ms(20); // Delay for IMU to work
   if (IMU_Init() != 0){
-    ST7735_Message(0, 0, "IMU error", 0);
+    ST7735_Message(1, 7, "IMU error", 0);
   }
 
   //Initialize LCD
