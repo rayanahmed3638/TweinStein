@@ -91,13 +91,13 @@ uint32_t Checks; // number of times virus checking has run
 uint32_t ChecksWork; // number of checks in 10 second
 
 #define MOTORPERIOD 10000 // 200Hz
-#define MOTORCHANGE 1000  // 10%
-#define MOTORMIN 1000     // 10%
-#define MOTORMAX 9000     // 90%
+#define MOTORCHANGE MOTORPERIOD/10  // 10%
+#define MOTORMIN MOTORPERIOD/10     // 10%
+#define MOTORMAX MOTORPERIOD     // 100%
 uint32_t ServoDuty; // 2000,2250,2500,2750,3000,3250,3500,3750,4000
 #define SERVOMIN 2000      // 1ms
-#define SERVOMAX 4000      // 2ms
-#define SERVOINIT 3000     // 1.5ms
+#define SERVOMAX 4400      // 2ms
+#define SERVOINIT 3200     // 1.5ms
 #define SERVOPERIOD 40000  // 20ms
 #define SERVOCHANGE 250    // 0.125ms
 //------------------Task 1--------------------------------
@@ -971,12 +971,81 @@ int TestMain4(void){
   OS_Launch(TIME_2MS);
   return 0; // should not return
 }
+
+void debounce_S2(){
+  while(LaunchPad_InS2()==0){}
+  Clock_Delay1ms(50);
+  while(LaunchPad_InS2()!=0){}
+}
+
+void readLine(char *buf, int maxLen){
+  int pos = 0;
+  while(1){
+    char c = UART_InUDec();
+    if(c == '\r') break;
+    if(c == '\b' || c == 127){       // backspace or DEL
+      if(pos > 0){
+        pos--;
+        buf[pos] = 0;
+        UART_OutString("\b \b");
+      }
+    }else if(c >= ' ' && c <= '~'){  // printable ASCII only
+      if(pos < maxLen - 1){
+        buf[pos] = c;
+        pos++;
+        UART_OutChar(c);
+      }
+    }
+  }
+  buf[pos] = 0;
+  UART_OutString("\n");
+}
+
+//calib main
+int calib_main(void){
+  OS_Init();        // initialize, disable interrupts
+
+  Logic_Init();
+
+  // Motor board does not have: ADC sensors, TFLuna, ST7735 LCD, SD card
+  // It has: ESP8266 WiFi, SSD1306 OLED, DC motors, servo, bump switches, CAN
+
+  // SSD1306 OLED init
+  SSD1306_Init(SSD1306_SWITCHCAPVCC);
+
+  // CAN init5
+  CAN_Init();
+  CAN_EnableInterrupts(1);
+
+  // Motor + servo PWM init
+  PWMG6_Init(PWMUSEBUSCLK,39,SERVOPERIOD,SERVOINIT);
+  PWMA0_Init(PWMUSEBUSCLK,39,MOTORPERIOD,5000,5000);
+  PWMA1_Init(PWMUSEBUSCLK,39,MOTORPERIOD,5000,5000);
+  bump_init();
+  
+  while(1){
+    PWMG6_SetDuty(3200);
+    SSD1306_SetCursor(0, 0);
+    SSD1306_OutString("Set Duty to 3150");
+    debounce_S2();
+    PWMG6_SetDuty(2000);
+    SSD1306_SetCursor(0, 0);
+    SSD1306_OutString("Set Duty to 1900");
+    debounce_S2();
+    PWMG6_SetDuty(4400);
+    SSD1306_SetCursor(0, 0);
+    SSD1306_OutString("Set Duty to 4200");
+    debounce_S2();
+  }
+  
+}
+
 //*******************Trampoline for selecting which main to execute**********
 int main(void) { 			// main 
   __disable_irq();
   Clock_Init80MHz(0); // no clock out to pin
   LaunchPad_Init();   // LaunchPad_Init must be called once and before other I/O initializations
-  realmain();
+  calib_main();
 }
 
 
