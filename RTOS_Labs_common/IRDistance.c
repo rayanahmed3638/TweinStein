@@ -67,23 +67,23 @@ int32_t IRDistance_Convert(int32_t adcSample, uint32_t sensor){
   return A[sensor]/(adcSample + B[sensor]) + C[sensor];
 }
 
-/* Calibrated constants from IR_Calib.xlsx (GP2Y0A21, 2-12 inch range)
+/* Calibrated constants from IR_Calib.xlsx (3-12 inch range, 4 pts each)
    d(mm) = A / (adc + B) + C
-   Right (PA26, ADC0 ch1): A=76921, B=-495, C=20, RMSE~4.6mm
-   Left  (PA22, ADC0 ch7): A=83326, B=-498, C=18, RMSE~7.5mm
-   Note: left sensor 5-inch calibration point appears ~0.5in short;
-         that measurement produces ~18mm error; all other points are <11mm.
+   Right (PA26, ADC0 ch1): A=52850,  B=-1239, C=69,  RMSE~18mm
+   Left  (PA22, ADC0 ch7): A=137932, B=-859,  C=32,  RMSE~10mm
+   Right RMSE is high because 9in and 12in ADC readings (1529 vs 1476)
+   are only 53 counts apart, compressing the far-range fit.
    Below the minimum calibrated ADC the sensor is beyond ~12in/305mm,
    so 305 is returned as the out-of-range sentinel. */
-#define IR_RIGHT_A      76921
-#define IR_RIGHT_B       -495
-#define IR_RIGHT_C         20
-#define IR_RIGHT_MIN_ADC  763   // ADC at ~12 inches
+#define IR_RIGHT_A       52850
+#define IR_RIGHT_B       -1239
+#define IR_RIGHT_C          69
+#define IR_RIGHT_MIN_ADC  1476   // ADC at ~12 inches
 
-#define IR_LEFT_A       83326
-#define IR_LEFT_B        -498
-#define IR_LEFT_C          18
-#define IR_LEFT_MIN_ADC   790   // ADC at ~12 inches
+#define IR_LEFT_A       137932
+#define IR_LEFT_B         -859
+#define IR_LEFT_C           32
+#define IR_LEFT_MIN_ADC   1376   // ADC at ~12 inches
 
 // returns distance in mm for the right IR sensor (PA26, ADC0 ch1)
 int32_t IRDistance_Right(int32_t adcSample){
@@ -100,6 +100,5 @@ int32_t IRDistance_Left(int32_t adcSample){
   }
   return IR_LEFT_A / (adcSample + IR_LEFT_B) + IR_LEFT_C;
 }
-
 
 
