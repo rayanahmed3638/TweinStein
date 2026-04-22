@@ -521,8 +521,6 @@ void WifiTask(void){
 #define STOP_TIME_MS (STOP_TIME*1000)
 
 void ServoThread(void){
-  SSD1306_OutClear();
-  while(LaunchPad_InS2() == 0);
   SSD1306_SetCursor(0,0);
   SSD1306_OutString("Motor Board");
   SSD1306_SetCursor(0,1);
@@ -533,7 +531,7 @@ void ServoThread(void){
     CanMessage_t message;
     CAN_ReadMessage(&message);
     if (message.MessageType == CMD_MOTOR){
-      //if (WifiStatus[7] != 'G' && WifiStatus[7] != 'g') { PWMA0_Break(); PWMA1_Break(); startTime = OS_MsTime(); continue; }  // Stop when server says red
+      if (WifiStatus[7] != 'G' && WifiStatus[7] != 'g') { PWMA0_Break(); PWMA1_Break(); startTime = OS_MsTime(); continue; }  // Stop when server says red
       if (message.Field1 == 0 || message.Field2 == 0) {
         if (message.Field1 == 0) PWMA0_Break();
         if (message.Field2 == 0) PWMA1_Break();
@@ -976,29 +974,6 @@ void debounce_S2(){
   while(LaunchPad_InS2()==0){}
   Clock_Delay1ms(50);
   while(LaunchPad_InS2()!=0){}
-}
-
-void readLine(char *buf, int maxLen){
-  int pos = 0;
-  while(1){
-    char c = UART_InUDec();
-    if(c == '\r') break;
-    if(c == '\b' || c == 127){       // backspace or DEL
-      if(pos > 0){
-        pos--;
-        buf[pos] = 0;
-        UART_OutString("\b \b");
-      }
-    }else if(c >= ' ' && c <= '~'){  // printable ASCII only
-      if(pos < maxLen - 1){
-        buf[pos] = c;
-        pos++;
-        UART_OutChar(c);
-      }
-    }
-  }
-  buf[pos] = 0;
-  UART_OutString("\n");
 }
 
 //calib main
