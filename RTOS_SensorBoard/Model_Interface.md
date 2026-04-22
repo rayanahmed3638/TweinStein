@@ -23,7 +23,7 @@ All constants live in `Model.h`. **Sim must use these exact values.** A shared h
 
 | Constant | Value | Units | Purpose |
 |---|---|---|---|
-| `CAP_IR` | 305 | mm | Maximum usable IR distance; inputs above this saturate to Q16 = 65536 |
+| `CAP_IR` | 800 | mm | Maximum usable IR distance; inputs above this saturate to Q16 = 65536 |
 | `CAP_TFLUNA` | 1000 | mm | Maximum usable TF-Luna distance for normalization |
 | `CAP_THROTTLE` | 9000 | PWM units | Maximum throttle command magnitude |
 | `CAP_STEERING` | 30 | degrees | Maximum steering magnitude (±30°) |
@@ -44,8 +44,8 @@ The input vector has 13 elements in this exact order (matches `input_t` enum in 
 
 | Index | Name | Source | Raw Range | Normalization | Q16 Encoding |
 |---|---|---|---|---|---|
-| 0 | `ir_right` | Right IR sensor, mm | [0, ≥305] | `Model_Normalize(x, CAP_IR)` | unsigned [0, 65536] |
-| 1 | `ir_left` | Left IR sensor, mm | [0, ≥305] | `Model_Normalize(x, CAP_IR)` | unsigned [0, 65536] |
+| 0 | `ir_right` | Right IR sensor, mm | [0, ≥800] | `Model_Normalize(x, CAP_IR)` | unsigned [0, 65536] |
+| 1 | `ir_left` | Left IR sensor, mm | [0, ≥800] | `Model_Normalize(x, CAP_IR)` | unsigned [0, 65536] |
 | 2 | `tf_left` | Left TF-Luna, mm | [0, ≥1000] | `Model_Normalize(x, CAP_TFLUNA)` | unsigned [0, 65536] |
 | 3 | `tf_middle` | Front TF-Luna, mm | [0, ≥1000] | `Model_Normalize(x, CAP_TFLUNA)` | unsigned [0, 65536] |
 | 4 | `tf_right` | Right TF-Luna, mm | [0, ≥1000] | `Model_Normalize(x, CAP_TFLUNA)` | unsigned [0, 65536] |
@@ -353,7 +353,7 @@ The network is small enough (33 parameters) that several methods work:
 
 Items the sim must model for trained weights to transfer:
 - PD controller matching the pseudocode in Section 6 bit-for-bit where integer arithmetic is visible.
-- Sensor saturation at the cap values (IR >305mm and TF-Luna >1000mm produce Q16 = 65536).
+- Sensor saturation at the cap values (IR >800mm and TF-Luna >1000mm produce Q16 = 65536).
 - Corner override triggered at `front < 600`, with the exact `urgency = (600-front) >> 4` formula.
 - Differential steering thresholds at ±15°.
 - One-timestep latency between action and next observation (prev-inputs are from the previous iteration).

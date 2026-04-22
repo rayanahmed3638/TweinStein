@@ -3,7 +3,7 @@
 
 #include "stdint.h"
 
-#define CAP_IR 305 // mm
+#define CAP_IR 800 // mm
 #define CAP_TFLUNA 1000 // mm
 #define CAP_THROTTLE 9000 // pwm
 #define CAP_STEERING 30 // degrees

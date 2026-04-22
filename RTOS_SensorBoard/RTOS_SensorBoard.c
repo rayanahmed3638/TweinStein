@@ -436,17 +436,17 @@ void Robot(void){
 #endif
 
     __disable_irq();
-    uint32_t d_ir  = Distance * 2;
-    uint32_t ld_ir = L_Distance * 2;
+    uint32_t d_ir  = Distance;
+    uint32_t ld_ir = L_Distance;
     __enable_irq();
 
     // FOR CALIBRATION
     // ST7735_Message(1, 0, "L_DistanceRaw: ", L_DistanceRaw);
     // ST7735_Message(1, 1, "DistanceRaw: ", DistanceRaw);
     // IR correction: if TFLuna sees open space (>600mm) and reads significantly
-    // more than the IR, the IR is past its calibrated range — clamp to 305mm.
-    if (d2  > 600 && d2  > d_ir  + 150) d_ir  = 305;
-    if (ld2 > 600 && ld2 > ld_ir + 150) ld_ir = 305;
+    // more than the IR, the IR is past its calibrated range — clamp to 800mm.
+    if (d2  > 600 && d2  > d_ir  + 150) d_ir  = 800;
+    if (ld2 > 600 && ld2 > ld_ir + 150) ld_ir = 800;
 
     int32_t angle   = arctan(((int32_t)(d_ir*1414)  - (int32_t)(d2*1000)) /(int32_t)(224+d2))  - angle_ref;
     int32_t L_angle = arctan(((int32_t)(ld_ir*1414) - (int32_t)(ld2*1000))/(int32_t)(224+ld2));
