@@ -469,9 +469,9 @@ void Robot(void){
     uint16_t throttle = 9999; // max throttle
     // Follow the gap kicks in when turn comes up
     if(front < 800){
+      if (front < 600) throttle -= 1000;
       if (front < 400) throttle -= 1000;
       if (front < 200) throttle -= 1000;
-      if (front < 100) throttle -= 2000;
       int32_t urgency = (800-front) >> 3;
       steeringAngle = (ld2 > d2) ? -urgency : urgency; // turn left if more room on left
     }
@@ -480,8 +480,8 @@ void Robot(void){
     if (steeringAngle < -35) steeringAngle = -35;
     else if (steeringAngle > 35) steeringAngle = 35;
 
-    if (front < 150){ // too close, tell motors we crashed
-      ST7735_Message(1, 1, "AHHH", 0);
+    if (front < 120){ // too close, tell motors we crashed
+      // ST7735_Message(1, 1, "AHHH", 0);
       CAN_TellCrashed(steeringAngle);
       continue;
     }
@@ -689,9 +689,9 @@ void IMU_Task(void){
   while (1){
     IMU_Read(); // Update globals
     // Debugging
-    ST7735_Message(1, 1, "AccelX: ", IMU_AccelX);
-    ST7735_Message(1, 2, "AccelY: ", IMU_AccelY);
-    ST7735_Message(1, 3, "GyroZ: ", IMU_GyroZ);
+    // ST7735_Message(1, 1, "AccelX: ", IMU_AccelX);
+    // ST7735_Message(1, 2, "AccelY: ", IMU_AccelY);
+    // ST7735_Message(1, 3, "GyroZ: ", IMU_GyroZ);
 
     OS_Sleep(20); // ~50 Hz
   }
