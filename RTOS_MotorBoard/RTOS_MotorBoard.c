@@ -473,6 +473,8 @@ void BuildLogData(void){
 
 void WifiTask(void){
   char *s;
+  char flushBuffer[64]; // Used to clear the remaining incoming data
+  
   // ESP8266 init and connect must happen inside a thread (after OS_Launch)
   // because the semaphore-synchronized FIFOs require the OS scheduler to be running
   if(!ESP8266_Init(true, false)){
@@ -489,30 +491,49 @@ void WifiTask(void){
 
   // Periodic logging loop: send data every ~5 seconds
   while(1){
-    //BuildLogData();
+    BuildLogData();
+    
     if(ESP8266_MakeTCPConnection((char *)Embedded_ece, 80, 0, false)){
+      
       ESP8266_StartReceiveSearch("status=");
       WifiStartTime = OS_Time();
+      
       if(ESP8266_Send(LOGDATA)){
-        uint32_t TimeOut = 10000000;
-        do{
+        
+        uint32_t timeoutLimit = 80000000; // Assuming 80MHz clock, 1 second timeout
+        uint32_t startWaitTime = OS_Time();
+        
+        do {
           s = ESP8266_GetReceiveBuffer();
-          TimeOut--;
-        } while((s == 0) && TimeOut);
-        WifiEndTime = OS_Time();
-        WifiElapsedTime = OS_TimeDifference(WifiStartTime, WifiEndTime);
-        if(s){
-          int i = 0;
-          while(((*s) != ' ') && (i < 15)){
-            WifiStatus[i] = *s;
-            s++; i++;
+          if(s == 0){
+             OS_Sleep(10); // Yield CPU to other threads for 10ms while waiting
           }
-          WifiStatus[i] = 0;
+        } while((s == 0) && (OS_TimeDifference(startWaitTime, OS_Time()) < timeoutLimit));
+        
+        if(s){
+          WifiEndTime = OS_Time();
+          WifiElapsedTime = OS_TimeDifference(WifiStartTime, WifiEndTime);
+          
+          int i = 0;
+          // Safe extraction loop (i < 14) to prevent memory corruption
+          while((s[i] != ' ') && (s[i] != '\0') && (s[i] != '\r') && (i < 14)){
+            WifiStatus[i] = s[i];
+            i++;
+          }
+          WifiStatus[i] = 0; 
         }
+        
+        // Flush the rest of the payload
+        // We found our string, but the ESP8266 is still receiving the rest of the HTTP packet.
+        // We must drain the data FIFO until it's empty so the driver state machine resets.
+        while(ESP8266_Receive(flushBuffer, sizeof(flushBuffer))){}
       }
+      
+      // Now it is 100% safe to close the TCP connection
       ESP8266_CloseTCPConnection();
     }
-    OS_Sleep(5000); // sleep 5 seconds between logs
+    
+    OS_Sleep(5000); 
   }
 }
 //--------------end of Task 6-----------------------------
@@ -533,7 +554,13 @@ void ServoThread(void){
     CanMessage_t message;
     CAN_ReadMessage(&message);
     if (message.MessageType == CMD_MOTOR){
-      // if (WifiStatus[7] != 'G' && WifiStatus[7] != 'g') { PWMA0_Break(); PWMA1_Break(); startTime = OS_MsTime(); continue; }  // Stop when server says red
+      if (WifiStatus[7] != 'G' && WifiStatus[7] != 'g' && WifiStatus[0] != 'G' && WifiStatus[0] != 'g') { 
+        // Stop when server doesn't say green
+        PWMA0_Break(); 
+        PWMA1_Break(); 
+        startTime = OS_MsTime(); 
+        continue; 
+      }
       if (message.Field1 == 0 || message.Field2 == 0) {
         if (message.Field1 == 0) PWMA0_Break();
         if (message.Field2 == 0) PWMA1_Break();
