@@ -451,7 +451,7 @@ extern uint32_t SysTickElapsed;
 uint32_t AddThreadStart,AddThreadElapsed;
 uint32_t RightMotorDuty;
 uint32_t LeftMotorDuty;
-uint32_t Steering;
+int32_t Steering;
 uint32_t BumpStatus;
 
 void BuildLogData(void){
@@ -554,13 +554,13 @@ void ServoThread(void){
     CanMessage_t message;
     CAN_ReadMessage(&message);
     if (message.MessageType == CMD_MOTOR){
-      if (WifiStatus[7] != 'G' && WifiStatus[7] != 'g' && WifiStatus[0] != 'G' && WifiStatus[0] != 'g') { 
-        // Stop when server doesn't say green
-        PWMA0_Break(); 
-        PWMA1_Break(); 
-        startTime = OS_MsTime(); 
-        continue; 
-      }
+      // if (WifiStatus[7] != 'G' && WifiStatus[7] != 'g' && WifiStatus[0] != 'G' && WifiStatus[0] != 'g') { 
+      //   // Stop when server doesn't say green
+      //   PWMA0_Break(); 
+      //   PWMA1_Break(); 
+      //   startTime = OS_MsTime(); 
+      //   continue; 
+      // }
       if (message.Field1 == 0 || message.Field2 == 0) {
         if (message.Field1 == 0) PWMA0_Break();
         if (message.Field2 == 0) PWMA1_Break();
@@ -589,7 +589,7 @@ void ServoThread(void){
         Set_Servo(message.Field3);
         LeftMotorDuty = message.Field1;
         RightMotorDuty = message.Field2;
-        Steering = message.Field3;
+        Steering = (int16_t)message.Field3;
       }
       // Display received command on SSD1306
       SSD1306_SetCursor(0,1);

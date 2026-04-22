@@ -444,9 +444,9 @@ void Robot(void){
     // ST7735_Message(1, 0, "L_DistanceRaw: ", L_DistanceRaw);
     // ST7735_Message(1, 1, "DistanceRaw: ", DistanceRaw);
     // IR correction: if TFLuna sees open space (>600mm) and reads significantly
-    // more than the IR, the IR is past its calibrated range — clamp to 800mm.
-    if (d2  > 600 && d2  > d_ir  + 150) d_ir  = 800;
-    if (ld2 > 600 && ld2 > ld_ir + 150) ld_ir = 800;
+    // more than the IR, the IR is past its calibrated range — clamp to 305mm.
+    if (d2  > 600 && d2  > d_ir  + 150) d_ir  = 305;
+    if (ld2 > 600 && ld2 > ld_ir + 150) ld_ir = 305;
 
     int32_t angle   = arctan(((int32_t)(d_ir*1414)  - (int32_t)(d2*1000)) /(int32_t)(224+d2))  - angle_ref;
     int32_t L_angle = arctan(((int32_t)(ld_ir*1414) - (int32_t)(ld2*1000))/(int32_t)(224+ld2));
@@ -1087,7 +1087,8 @@ int DumpRobotFileMain(void){
 
   NumCreated = 0;
 
-  NumCreated = OS_AddThread(&VirusDetector, 128, 7);
+  NumCreated += OS_AddThread(&VirusDetector, 128, 7);
+  NumCreated += OS_AddThread(&Interpreter, 128, 1);
 
   if(eFile_Init())  diskError("eFile_Init", 0);
   if(eFile_Mount()) diskError("eFile_Mount", 0);
