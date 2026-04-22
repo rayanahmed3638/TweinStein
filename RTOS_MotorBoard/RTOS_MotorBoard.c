@@ -578,12 +578,12 @@ void ServoThread(void){
         if (message.Field2 == 0) PWMA1_Break();
         continue;
       }
-      Stop after a certain amount of time
-      if (OS_MsTime() - startTime >= STOP_TIME_MS){
-        PWMA0_Break();
-        PWMA1_Break();
-        continue;
-      }
+      // Stop after a certain amount of time
+      // if (OS_MsTime() - startTime >= STOP_TIME_MS){
+      //   PWMA0_Break();
+      //   PWMA1_Break();
+      //   continue;
+      // }
       if(crashed){
         bump_disable_interuppts();
         Set_Servo(0);
