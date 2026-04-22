@@ -533,7 +533,12 @@ void WifiTask(void){
       ESP8266_CloseTCPConnection();
     }
     
-    OS_Sleep(5000); 
+    if (WifiStatus[7] != 'g' && WifiStatus[7] != 'G'){
+      OS_Sleep(20);
+    }
+    else{
+      OS_Sleep(5000); 
+    }
   }
 }
 //--------------end of Task 6-----------------------------
@@ -550,28 +555,35 @@ void ServoThread(void){
   SSD1306_OutString("Waiting for CAN...");
   uint32_t startTime = OS_MsTime();
   while(1){
+    // Show WiFi status if available
+    if(WifiStatus[0]){
+      SSD1306_SetCursor(0,5);
+      SSD1306_OutString("WiFi: ");
+      SSD1306_OutString(WifiStatus);
+    }
+
     // Wait for data
     CanMessage_t message;
     CAN_ReadMessage(&message);
     if (message.MessageType == CMD_MOTOR){
-      // if (WifiStatus[7] != 'G' && WifiStatus[7] != 'g' && WifiStatus[0] != 'G' && WifiStatus[0] != 'g') { 
-      //   // Stop when server doesn't say green
-      //   PWMA0_Break(); 
-      //   PWMA1_Break(); 
-      //   startTime = OS_MsTime(); 
-      //   continue; 
-      // }
+      if (WifiStatus[7] != 'G' && WifiStatus[7] != 'g' && WifiStatus[0] != 'G' && WifiStatus[0] != 'g') { 
+        // Stop when server doesn't say green
+        PWMA0_Break(); 
+        PWMA1_Break(); 
+        startTime = OS_MsTime(); 
+        continue; 
+      }
       if (message.Field1 == 0 || message.Field2 == 0) {
         if (message.Field1 == 0) PWMA0_Break();
         if (message.Field2 == 0) PWMA1_Break();
         continue;
       }
-      // Stop after a certain amount of time
-      // if (OS_MsTime() - startTime >= STOP_TIME_MS){
-      //   PWMA0_Break();
-      //   PWMA1_Break();
-      //   continue;
-      // }
+      Stop after a certain amount of time
+      if (OS_MsTime() - startTime >= STOP_TIME_MS){
+        PWMA0_Break();
+        PWMA1_Break();
+        continue;
+      }
       if(crashed){
         bump_disable_interuppts();
         Set_Servo(0);
@@ -612,12 +624,6 @@ void ServoThread(void){
       PWMA1_Break();
       crashed = 0; 
       bump_enable_interuppts();
-    }
-    // Show WiFi status if available
-    if(WifiStatus[0]){
-      SSD1306_SetCursor(0,5);
-      SSD1306_OutString("WiFi: ");
-      SSD1306_OutString(WifiStatus);
     }
   }
 }

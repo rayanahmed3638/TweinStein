@@ -540,8 +540,8 @@ void Robot(void){
       char* name;
       unsigned long size;
       eFile_DirNext(&name, &size);
-      ST7735_Message(1, 0, "File dump complete ", 0);
-      ST7735_Message(1, 1, "File size: ", size);
+      ST7735_Message(0, 2, "File dump complete ", 0);
+      ST7735_Message(0, 3, "File size: ", size);
       while (1){ // Stop robot when we can no longer log
         CAN_SetMotors(0, 0, 0);
       }
@@ -689,9 +689,9 @@ void IMU_Task(void){
   while (1){
     IMU_Read(); // Update globals
     // Debugging
-    // ST7735_Message(1, 1, "AccelX: ", IMU_AccelX);
-    // ST7735_Message(1, 2, "AccelY: ", IMU_AccelY);
-    // ST7735_Message(1, 3, "GyroZ: ", IMU_GyroZ);
+    ST7735_Message(1, 1, "AccelX: ", IMU_AccelX);
+    ST7735_Message(1, 2, "AccelY: ", IMU_AccelY);
+    ST7735_Message(1, 3, "GyroZ: ", IMU_GyroZ);
 
     OS_Sleep(20); // ~50 Hz
   }
