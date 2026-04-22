@@ -77,11 +77,22 @@ uint8_t I2C_Recv1(int8_t slave);
  * Uses busy-wait synchronization <br>
  * <b>[send address][read data][read data]</b>
  * @param slave is slave address
- * @return 16-bit data received 
+ * @return 16-bit data received
  * @brief  Receive two bytes
  * @note Does not check for errors
  */
 uint16_t I2C_Recv2(int8_t slave);
+
+/**
+ * Receive N bytes from specified slave into caller buffer.
+ * Uses busy-wait synchronization.
+ * @param  slave  slave address
+ * @param  buf    destination buffer (must hold count bytes)
+ * @param  count  number of bytes to read (1 to 4095)
+ * @return 1 if successful, 0 on error
+ * @brief  Receive N bytes
+ */
+int I2C_RecvN(int8_t slave, uint8_t *buf, uint32_t count);
 
 /**
  * I2C_Send

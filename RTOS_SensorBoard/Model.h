@@ -11,6 +11,8 @@
 #define CAP_ANGLE_POW 6 // 2^6 = 64
 #define CAP_DELTA_STEERING 10
 #define CAP_DELTA_THROTTLE 2000
+#define CAP_YAW 16384 // raw LSB, ~125 deg/s at 131 LSB/(deg/s)
+#define CAP_ACCEL 8192 // raw LSB, ~0.5g at 16384 LSB/g
 
 typedef int32_t fixed_t;
 typedef enum { ir_right,
@@ -23,6 +25,9 @@ typedef enum { ir_right,
                steering_prev,
                angle_left,
                angle_right,
+               yaw_rate,
+               accel_lat,
+               accel_long,
                NUM_INPUTS } input_t;
 
 typedef enum { throttle_left,

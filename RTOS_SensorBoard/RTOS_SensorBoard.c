@@ -34,6 +34,7 @@
 #include "../RTOS_Labs_common/eFile.h"
 #include "../RTOS_Labs_common/CAN.h"
 #include "Model.h"
+#include "IMU.h"
 #include <stdio.h>
 // PA10 is UART0 Tx    index 20 in IOMUX PINCM table
 // PA11 is UART0 Rx    index 21 in IOMUX PINCM table
@@ -62,6 +63,9 @@
 //UART3 is shared between LD19 and TFLuna3 (can have either but not both)
 
 // **** OS must run disk_timerproc();  at 1000Hz, every 1ms *****
+long StartCritical(void);
+void EndCritical(long sr);
+
 uint32_t Running;           // true while robot is running
 uint32_t NumCreated;   // number of foreground threads created
 
@@ -225,7 +229,8 @@ void DAS(void){
       }
       if(jitter > MaxJitter3){
         MaxJitter3 = jitter; // in 12.5 ns
-      }       // jitter should be 0    
+      }       // jitter should be 0 
+      if (jitter > JITTERSIZE3-1) jitter = JITTERSIZE3-1;   // clamp
       JitterHistogram3[jitter]++; 
     }
     ChecksWork = Checks;
@@ -330,10 +335,9 @@ void diskError(char *errtype, int32_t code){
 }
 void StartFileDump(char *pt){
   OS_bWait(&LCDFree);
-  eFile_Delete(pt); // Overwrite the file
   eFile_Create(pt); // ignore error if file already exists
   if(eFile_WOpen(pt))  diskError("eFile_WOpen",0);
-  if(eFile_WriteString("time_ms,ir_r,ir_l,tf_r,tf_l,tf_front,throttle_l,throttle_r,steering\n"))  diskError("eFile_WriteString",0);
+  if(eFile_WriteString("time_ms,ir_r,ir_l,tf_r,tf_l,tf_front,throttle_l,throttle_r,steering,gyro_z,accel_x,accel_y\n"))  diskError("eFile_WriteString",0);
   OS_bSignal(&LCDFree);
 }
 void EndFileDump(){
@@ -352,7 +356,7 @@ void FileDump(uint32_t data, uint32_t data2){
   ClrPB4();
 }
 
-#define NUMCOLS 9
+#define NUMCOLS 12
 // Dump row into csv
 int FileDumpRow(int32_t* row){
   OS_bWait(&LCDFree);
@@ -402,7 +406,7 @@ void Robot(void){
   UART_OutString("Robot running...");
   StartFileDump(FileName);
   OS_ClearMsTime();
-  //while (LaunchPad_InS2() == 0); // REMOVE AFTER DATA COLLECTION
+  while (LaunchPad_InS2() == 0); // REMOVE AFTER DATA COLLECTION
   startTime = OS_MsTime();
   while(1) {
     elapsed = OS_MsTime() - prevTime;
@@ -436,6 +440,9 @@ void Robot(void){
     uint32_t ld_ir = L_Distance * 2;
     __enable_irq();
 
+    // FOR CALIBRATION
+    // ST7735_Message(1, 0, "L_DistanceRaw: ", L_DistanceRaw);
+    // ST7735_Message(1, 1, "DistanceRaw: ", DistanceRaw);
     // IR correction: if TFLuna sees open space (>600mm) and reads significantly
     // more than the IR, the IR is past its calibrated range — clamp to 305mm.
     if (d2  > 600 && d2  > d_ir  + 150) d_ir  = 305;
@@ -459,24 +466,23 @@ void Robot(void){
     int32_t front = (int32_t)FrontDist;
     __enable_irq();
 
-    uint16_t throttle = 9000;
-
+    uint16_t throttle = 9999; // max throttle
     if(front < 600){
       throttle -= 2000;
-      int32_t urgency = (600-front) >> 4; // 0 at 600mm, 37 at 0mm (clamped to 30 later)
+      int32_t urgency = (600-front) >> 3; // 0 at 600mm, 75 at 0mm (clamped to 53)
       steeringAngle = (ld2 > d2) ? -urgency : urgency; // turn left if more room on left
     }
 
     // Clamp steering angle
-    if (steeringAngle < -30) steeringAngle = -30;
-    else if (steeringAngle > 30) steeringAngle = 30;
+    if (steeringAngle < -53) steeringAngle = -53;
+    else if (steeringAngle > 53) steeringAngle = 53;
 
     // Differential steering
     uint16_t throttle_l = throttle, throttle_r = throttle;
-    if (steeringAngle <= -15) {
+    if (steeringAngle <= -30) {
       throttle_r -= 2000;
     }
-    else if (steeringAngle >= 15) {
+    else if (steeringAngle >= 30) {
       throttle_l -= 2000;
     }
 
@@ -496,6 +502,15 @@ void Robot(void){
     Model_Inputs[angle_left] = (L_angle + CAP_ANGLE) << (16 - CAP_ANGLE_POW - 1);
     Model_Inputs[angle_right] = (angle + CAP_ANGLE) << (16 - CAP_ANGLE_POW - 1);
 
+    long sr = StartCritical();
+    int16_t gz = IMU_GyroZ;
+    int16_t ax = IMU_AccelX;
+    int16_t ay = IMU_AccelY;
+    EndCritical(sr);
+    Model_Inputs[yaw_rate]   = Model_NormalizeSigned((int32_t)(-gz), CAP_YAW);
+    Model_Inputs[accel_lat]  = Model_NormalizeSigned((int32_t)ax, CAP_ACCEL);
+    Model_Inputs[accel_long] = Model_NormalizeSigned((int32_t)ay, CAP_ACCEL);
+
     // Call model inference
     Model_Inference();
 
@@ -510,13 +525,14 @@ void Robot(void){
     CAN_SetMotors(throttle_l, throttle_r, steeringAngle);
 
     // Data collection
-    // int32_t row[NUMCOLS] = {OS_MsTime(), d_ir, ld_ir, d2, ld2, front, throttle_l, throttle_r, steeringAngle};
-    // if (FileDumpRow(row)){
-    //   EndFileDump();
-    //   while (1){ // Stop robot when we can no longer log
-    //     CAN_SetMotors(0, 0, 0);
-    //   }
-    // }
+    int32_t row[NUMCOLS] = {OS_MsTime(), d_ir, ld_ir, d2, ld2, front, throttle_l, throttle_r, steeringAngle, gz, ax, ay};
+    if (FileDumpRow(row)){
+      EndFileDump();
+      ST7735_Message(1, 0, "File dump complete ", 0);
+      while (1){ // Stop robot when we can no longer log
+        CAN_SetMotors(0, 0, 0);
+      }
+    }
   }
   EndFileDump();
   UART_OutString("done.\n\r>");
@@ -655,6 +671,22 @@ void DFT(void){ int i;  int32_t real,imag,mag;
 
 //--------------end of Task 5-----------------------------
 
+// IMU Task
+void IMU_Task(void){
+  while (1){
+    IMU_Read(); // Update globals
+    // Debugging
+    // ST7735_Message(1, 1, "AccelX: ", IMU_AccelX);
+    // ST7735_Message(1, 2, "AccelY: ", IMU_AccelY);
+    // ST7735_Message(1, 3, "AccelZ: ", IMU_AccelZ);
+    // ST7735_Message(1, 4, "GyroX: ", IMU_GyroX);
+    // ST7735_Message(1, 5, "GyroY: ", IMU_GyroY);
+    // ST7735_Message(1, 6, "GyroZ: ", IMU_GyroZ);
+
+    OS_Sleep(20); // ~50 Hz
+  }
+}
+
 
 //*******************final user main DEMONTRATE THIS TO TA**********
 int realmain(void){     // realmain
@@ -678,6 +710,10 @@ int realmain(void){     // realmain
   CAN_Init();
   CAN_EnableInterrupts(1);
 
+  if (IMU_Init() != 0){
+    ST7735_Message(0, 0, "IMU error", 0);
+  }
+
   //Initialize LCD
   ST7735_InitR(INITR_REDTAB); // Motor board uses SSD1306, not ST7735
 
@@ -689,9 +725,11 @@ int realmain(void){     // realmain
 
 	// create initial foreground threads
   NumCreated = 0;
-  NumCreated += OS_AddThread(&Interpreter,128,1);
+  NumCreated += OS_AddThread(&Interpreter,128,3);
   NumCreated += OS_AddThread(&Robot,128,1);  // CAN motor commands (waits for S2)
-  NumCreated += OS_AddThread(&VirusDetector,128,2);
+  NumCreated += OS_AddThread(&IMU_Task, 128, 1); // Gets IMU data
+  NumCreated += OS_AddThread(&VirusDetector,128,7);
+  
  
   LPF_Init7(500,7);
   TFLuna1_Init(&Producer3);
@@ -713,7 +751,7 @@ int realmain(void){     // realmain
   TFLuna3_System_Reset();  // start measurements
 
   if(eFile_Init())              diskError("eFile_Init",0); 
-  // if(eFile_Format())            diskError("eFile_Format",0); 
+  if(eFile_Format())            diskError("eFile_Format",0); 
   if(eFile_Mount())             diskError("eFile_Mount",0);
   OS_Launch(TIME_2MS); // doesn't return, interrupts enabled in here
   return 0;            // this never executes
@@ -1055,6 +1093,56 @@ int DumpRobotFileMain(void){
   if(eFile_Mount()) diskError("eFile_Mount", 0);
 
   UART_OutString("\n\rReady. Press S2 (PB21) to dump robot0.\n\r");
+  OS_Launch(TIME_2MS);
+  return 0;
+}
+
+
+//*****************Test project IMU*************************
+// Read IMU, scale to physical units, display on LCD.
+// Accel in milli-g (1000 mg = 1 g).
+// Gyro  in deci-dps (10 ddps = 1 deg/s).
+// Temp  in centi-C  (100 cC = 1 C).
+void TestIMU(void){
+  while(1){
+    IMU_Read();
+
+    int32_t ax_mg   = ((int32_t)IMU_AccelX * 1000) / 16384;
+    int32_t ay_mg   = ((int32_t)IMU_AccelY * 1000) / 16384;
+    int32_t az_mg   = ((int32_t)IMU_AccelZ * 1000) / 16384;
+    int32_t gx_ddps = ((int32_t)IMU_GyroX  * 10)   / 131;
+    int32_t gy_ddps = ((int32_t)IMU_GyroY  * 10)   / 131;
+    int32_t gz_ddps = ((int32_t)IMU_GyroZ  * 10)   / 131;
+    int32_t t_cC    = ((int32_t)IMU_Temp   * 100)  / 340 + 3653;
+
+    ST7735_Message(0, 0, "ax (mg)  =", ax_mg);
+    ST7735_Message(0, 1, "ay (mg)  =", ay_mg);
+    ST7735_Message(0, 2, "az (mg)  =", az_mg);
+    ST7735_Message(0, 3, "gx(ddps) =", gx_ddps);
+    ST7735_Message(0, 4, "gy(ddps) =", gy_ddps);
+    ST7735_Message(0, 5, "gz(ddps) =", gz_ddps);
+    ST7735_Message(0, 6, "T  (cC)  =", t_cC);
+
+    OS_Sleep(100); // 10 Hz display update
+  }
+}
+
+int TestmainIMU(void){
+  OS_Init();
+  Logic_Init();
+
+  ST7735_InitR(INITR_REDTAB);
+
+  int err = IMU_Init();
+  if(err != 0){
+    ST7735_Message(0, 0, "IMU_Init err =", err);
+    while(1){} // halt
+  }
+
+  NumCreated = 0;
+  NumCreated += OS_AddThread(&TestIMU, 128, 1);
+  NumCreated += OS_AddThread(&VirusDetector, 128, 2);
+
   OS_Launch(TIME_2MS);
   return 0;
 }

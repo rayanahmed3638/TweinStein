@@ -489,7 +489,7 @@ void WifiTask(void){
 
   // Periodic logging loop: send data every ~5 seconds
   while(1){
-    BuildLogData();
+    //BuildLogData();
     if(ESP8266_MakeTCPConnection((char *)Embedded_ece, 80, 0, false)){
       ESP8266_StartReceiveSearch("status=");
       WifiStartTime = OS_Time();
@@ -521,6 +521,8 @@ void WifiTask(void){
 #define STOP_TIME_MS (STOP_TIME*1000)
 
 void ServoThread(void){
+  SSD1306_OutClear();
+  // while(LaunchPad_InS2() == 0);
   SSD1306_SetCursor(0,0);
   SSD1306_OutString("Motor Board");
   SSD1306_SetCursor(0,1);
@@ -531,23 +533,24 @@ void ServoThread(void){
     CanMessage_t message;
     CAN_ReadMessage(&message);
     if (message.MessageType == CMD_MOTOR){
-      if (WifiStatus[7] != 'G' && WifiStatus[7] != 'g') { PWMA0_Break(); PWMA1_Break(); startTime = OS_MsTime(); continue; }  // Stop when server says red
+      // if (WifiStatus[7] != 'G' && WifiStatus[7] != 'g') { PWMA0_Break(); PWMA1_Break(); startTime = OS_MsTime(); continue; }  // Stop when server says red
       if (message.Field1 == 0 || message.Field2 == 0) {
         if (message.Field1 == 0) PWMA0_Break();
         if (message.Field2 == 0) PWMA1_Break();
         continue;
       }
-      if (OS_MsTime() - startTime >= STOP_TIME_MS){
-        PWMA0_Break();
-        PWMA1_Break();
-        continue;
-      }
+      // Stop after a certain amount of time
+      // if (OS_MsTime() - startTime >= STOP_TIME_MS){
+      //   PWMA0_Break();
+      //   PWMA1_Break();
+      //   continue;
+      // }
       if(crashed){
         bump_disable_interuppts();
         Set_Servo(0);
-        PWMA1_Backward(5000); // we need to fix this cause the CAN read is blocking 
+        PWMA1_Backward(5000); 
         PWMA0_Forward(5000);
-        OS_Sleep(1000);       // reverse for 500ms
+        OS_Sleep(1000); 
         PWMA0_Break();
         PWMA1_Break();
         crashed = 0; 
@@ -1016,11 +1019,12 @@ int calib_main(void){
 }
 
 //*******************Trampoline for selecting which main to execute**********
+
 int main(void) { 			// main 
   __disable_irq();
   Clock_Init80MHz(0); // no clock out to pin
   LaunchPad_Init();   // LaunchPad_Init must be called once and before other I/O initializations
-  calib_main();
+  realmain();
 }
 
 

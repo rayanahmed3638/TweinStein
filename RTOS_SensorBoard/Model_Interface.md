@@ -9,11 +9,11 @@ The controller is a **residual architecture**. A PD baseline controller computes
 ## 1. Architecture
 
 - **Network type:** single-layer linear regression. No hidden layers, no activations.
-- **Shape:** `output[3] = W[3][10] * input[10] + b[3]`
+- **Shape:** `output[3] = W[3][13] * input[13] + b[3]`
 - **Numeric format:** Q16 signed fixed point throughout. Unity = 65536. Internal accumulator uses `int64_t` to prevent overflow during multiply.
-- **Parameter count:** 33 (30 weights + 3 biases).
+- **Parameter count:** 42 (39 weights + 3 biases).
 
-Because the network is linear, training can treat it as a 30-weight multivariate regression or as a tiny policy network for reinforcement learning. Either is acceptable.
+Because the network is linear, training can treat it as a 39-weight multivariate regression or as a tiny policy network for reinforcement learning. Either is acceptable.
 
 ---
 
@@ -31,6 +31,8 @@ All constants live in `Model.h`. **Sim must use these exact values.** A shared h
 | `CAP_ANGLE_POW` | 6 | — | `log2(CAP_ANGLE)`, used to turn the angle normalize into a pure shift |
 | `CAP_DELTA_STEERING` | 10 | degrees | Max magnitude of residual correction to steering |
 | `CAP_DELTA_THROTTLE` | 2000 | PWM units | Max magnitude of residual correction to each throttle |
+| `CAP_YAW` | 16384 | raw LSB | Yaw-rate clamp; 16384 LSB ≈ 125 deg/s at the MPU-6050 default ±250 deg/s range (131 LSB/(deg/s)) |
+| `CAP_ACCEL` | 8192 | raw LSB | Accel clamp (lateral and longitudinal); 8192 LSB ≈ 0.5 g at the MPU-6050 default ±2 g range (16384 LSB/g) |
 
 The delta caps determine **how much authority the model has over the PD controller**. Small delta caps keep the controller close to the known-safe PD baseline. Larger delta caps allow the model to override more aggressively. Start with the values above.
 
@@ -38,7 +40,7 @@ The delta caps determine **how much authority the model has over the PD controll
 
 ## 3. Input Vector Layout
 
-The input vector has 10 elements in this exact order (matches `input_t` enum in `Model.h`):
+The input vector has 13 elements in this exact order (matches `input_t` enum in `Model.h`):
 
 | Index | Name | Source | Raw Range | Normalization | Q16 Encoding |
 |---|---|---|---|---|---|
@@ -52,6 +54,9 @@ The input vector has 10 elements in this exact order (matches `input_t` enum in 
 | 7 | `steering_prev` | Applied steering angle, previous iter | [-30, +30] | `Model_NormalizeSigned(x, CAP_STEERING)` | offset [0, 65536], center = 32768 |
 | 8 | `angle_left` | Wall angle from left sensors, deg | clamped to [-64, +64] | `(x + 64) << 9` | offset [0, 65536], center = 32768 |
 | 9 | `angle_right` | Wall angle from right sensors, deg | clamped to [-64, +64] | `(x + 64) << 9` | offset [0, 65536], center = 32768 |
+| 10 | `yaw_rate` | `-IMU_GyroZ` (sign flipped so + = right turn), raw LSB | clamped to [-16384, +16384] | `Model_NormalizeSigned(x, CAP_YAW)` | offset [0, 65536], center = 32768 |
+| 11 | `accel_lat` | `IMU_AccelX` (+ = chassis accel to right), raw LSB | clamped to [-8192, +8192] | `Model_NormalizeSigned(x, CAP_ACCEL)` | offset [0, 65536], center = 32768 |
+| 12 | `accel_long` | `IMU_AccelY` (+ = forward accel), raw LSB | clamped to [-8192, +8192] | `Model_NormalizeSigned(x, CAP_ACCEL)` | offset [0, 65536], center = 32768 |
 
 ### Normalization formulas
 
@@ -73,6 +78,20 @@ This maps `-cap → 0`, `0 → 32768`, `+cap → 65536`.
 clamp angle to [-64, +64]
 out = (angle + 64) << 9         # equivalent to ((angle+64) << 16) / 128
 ```
+
+### IMU inputs (indices 10-12)
+
+The three IMU inputs come from the GY-521 / MPU-6050 and use **raw 16-bit LSB** from the chip, not converted physical units. Scale factors (default MPU-6050 ranges): 131 LSB/(deg/s) for gyro, 16384 LSB/g for accel. Full documentation of axis mapping, sign conventions, and scale factors lives in `IMU_behavior.md`.
+
+Sign conventions used throughout the project:
+- `steeringAngle > 0` = right turn.
+- `yaw_rate > 0` = right turn. This requires **negating** `IMU_GyroZ` when reading from the driver, because the raw gyro uses right-hand-rule (left turn = positive). The firmware does this negation at the input-packing site.
+- `accel_lat > 0` = chassis accelerating to the right. Matches `IMU_AccelX` directly; no sign flip.
+- `accel_long > 0` = chassis accelerating forward. Matches `IMU_AccelY` directly; no sign flip.
+
+Simulation must produce equivalent **raw-LSB** values (either by simulating the chip quantization explicitly, or by converting physical units: `raw_gyro = round(dps * 131)`, `raw_accel = round(g * 16384)`). The sim must also apply the negation on the gyro-Z channel before normalization so that the model sees a consistent "+ = right turn" convention across yaw rate and steering.
+
+Saturation note: `Model_NormalizeSigned` clamps out-of-range inputs to `[-CAP, +CAP]` internally. Hard corners that exceed 125 deg/s yaw or 0.5 g lateral produce saturated inputs; the model cannot distinguish "at limit" from "beyond limit." Raise the caps if the log shows frequent saturation.
 
 ### Previous-action inputs
 
@@ -204,6 +223,7 @@ The firmware does everything in signed integer math. The sim may use floats inte
 ```
 # 1. Read simulated sensors
 (d_ir, ld_ir, d2, ld2, front) = sim_sensors()
+(raw_gyro_z, raw_accel_x, raw_accel_y) = sim_imu_raw_lsb()     # see Section 3 for scale
 
 # 2. Run PD baseline (see Section 6)
 (pd_throttle_l, pd_throttle_r, pd_steering) = pd_controller(sensors, prev_pd_state)
@@ -219,6 +239,9 @@ inputs[6]  = prev_applied_throttle_r_normalized
 inputs[7]  = prev_applied_steering_normalized
 inputs[8]  = encode_angle(L_angle)
 inputs[9]  = encode_angle(angle)
+inputs[10] = normalize_signed(-raw_gyro_z, CAP_YAW)            # sign flip: + = right turn
+inputs[11] = normalize_signed( raw_accel_x, CAP_ACCEL)          # + = right
+inputs[12] = normalize_signed( raw_accel_y, CAP_ACCEL)          # + = forward
 
 # 4. Run inference
 raw_outputs = W @ inputs + b
@@ -262,7 +285,7 @@ The robot writes a CSV of every control iteration to the onboard SD card under t
 ### Header line
 
 ```
-time_ms,ir_r,ir_l,tf_r,tf_l,tf_front,throttle_l,throttle_r,steering
+time_ms,ir_r,ir_l,tf_r,tf_l,tf_front,throttle_l,throttle_r,steering,gyro_z,accel_x,accel_y
 ```
 
 ### Column definitions
@@ -278,8 +301,11 @@ time_ms,ir_r,ir_l,tf_r,tf_l,tf_front,throttle_l,throttle_r,steering
 | `throttle_l` | PWM units, [0, 9000] | applied left throttle sent to CAN |
 | `throttle_r` | PWM units, [0, 9000] | applied right throttle sent to CAN |
 | `steering` | degrees, [-30, +30] | applied steering angle sent to CAN, signed decimal |
+| `gyro_z` | raw LSB, signed | `IMU_GyroZ` as read from the chip (NOT sign-flipped). 131 LSB per deg/s. Negate at parse time to match the project's "+ = right turn" convention. |
+| `accel_x` | raw LSB, signed | `IMU_AccelX` as read. 16384 LSB per g. + = chassis accel to right (matches steering sign). |
+| `accel_y` | raw LSB, signed | `IMU_AccelY` as read. 16384 LSB per g. + = forward accel (speeding up). |
 
-All integer decimals. One row per control iteration (~12.5 Hz). No trailing comma. Newline is `\n`.
+All integer decimals. One row per control iteration (~12.5 Hz). No trailing comma. Newline is `\n`. IMU values are snapshotted from the IMU globals at the moment of logging; the `IMU_Task` thread updates them at ~50 Hz, so consecutive rows may repeat identical IMU samples.
 
 ### Capture workflow (host side)
 
@@ -348,9 +374,9 @@ The final artifact is a block of C that replaces the current initializers in `Mo
 
 ```c
 const fixed_t Model_Weights[NUM_OUTPUTS][NUM_INPUTS] = {
-  { w_00, w_01, w_02, w_03, w_04, w_05, w_06, w_07, w_08, w_09 },  // throttle_left
-  { w_10, w_11, w_12, w_13, w_14, w_15, w_16, w_17, w_18, w_19 },  // throttle_right
-  { w_20, w_21, w_22, w_23, w_24, w_25, w_26, w_27, w_28, w_29 },  // steering
+  { w_00, w_01, w_02, w_03, w_04, w_05, w_06, w_07, w_08, w_09, w_0A, w_0B, w_0C },  // throttle_left
+  { w_10, w_11, w_12, w_13, w_14, w_15, w_16, w_17, w_18, w_19, w_1A, w_1B, w_1C },  // throttle_right
+  { w_20, w_21, w_22, w_23, w_24, w_25, w_26, w_27, w_28, w_29, w_2A, w_2B, w_2C },  // steering
 };
 
 const fixed_t Model_Bias[NUM_OUTPUTS] = { b_0, b_1, b_2 };
@@ -360,7 +386,7 @@ Column order within each row must match the `input_t` enum order listed in Secti
 
 ### Numeric range checks before export
 
-- Each weight's absolute value should stay well below `2^15` in Q16 (i.e., raw float magnitude below ~0.5), or intermediate `fixed_mul` products can be large enough that the accumulator approaches `int32_t` limits when summed across 10 inputs. If weights grow larger, enforce an L2 penalty during training.
+- Each weight's absolute value should stay well below `2^15` in Q16 (i.e., raw float magnitude below ~0.5), or intermediate `fixed_mul` products can be large enough that the accumulator approaches `int32_t` limits when summed across 13 inputs. If weights grow larger, enforce an L2 penalty during training.
 - Bias magnitudes typically stay within `[0, 65536]` (the output range). Values far outside this range indicate the model is trying to shift the nominal output far from center — usually a training issue.
 
 ### Validation

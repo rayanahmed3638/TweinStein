@@ -98,6 +98,26 @@ uint16_t I2C_Recv2(int8_t slave){
   data2 = I2C1->MASTER.MRXDATA;
   return (data1<<8)+data2;
 }
+// receives N bytes from specified slave into caller buffer
+// Returns 1 if successful, 0 on error
+int I2C_RecvN(int8_t slave, uint8_t *buf, uint32_t count){
+  if(count == 0 || count > 4095) return 0;
+  while((I2C1->MASTER.MSR & 0x20) == 0){}; // wait until idle
+  I2C1->MASTER.MSA = (slave<<1) | 0x0001;
+  // bit 7-1 address
+  // bit 0 direction=1 receive
+  I2C1->MASTER.MCTR = (count << 16) | 0x00000007;
+  // bits 27-16 MBLEN = count (length)
+  // bit 2 STOP=1
+  // bit 1 START=1
+  // bit 0 BURSTRUN=1
+  for(uint32_t i = 0; i < count; i++){
+    while((I2C1->MASTER.MFIFOSR & 0x000F) == 0){}; // wait for received data
+    buf[i] = I2C1->MASTER.MRXDATA;
+  }
+  return 1;
+}
+
 int static IC2FillTxFifo(uint8_t *buffer, uint16_t count){
   for(int i=0; i<count; i++){
     if((I2C1->MASTER.MFIFOSR & 0x0F00) == 0) return 0; // fail TxFifo can't take data
