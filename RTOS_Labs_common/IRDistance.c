@@ -75,15 +75,15 @@ int32_t IRDistance_Convert(int32_t adcSample, uint32_t sensor){
    are only 53 counts apart, compressing the far-range fit.
    Below the minimum calibrated ADC the sensor is beyond ~12in/305mm,
    so 305 is returned as the out-of-range sentinel. */
-#define IR_RIGHT_A       52850
-#define IR_RIGHT_B       -1239
-#define IR_RIGHT_C          69
-#define IR_RIGHT_MIN_ADC  1476   // ADC at ~12 inches
+#define IR_RIGHT_A       199877
+#define IR_RIGHT_B       -666
+#define IR_RIGHT_C          4
+#define IR_RIGHT_MIN_ADC  1381   // ADC at ~12 inches
 
-#define IR_LEFT_A       137932
-#define IR_LEFT_B         -859
-#define IR_LEFT_C           32
-#define IR_LEFT_MIN_ADC   1376   // ADC at ~12 inches
+#define IR_LEFT_A       186922
+#define IR_LEFT_B         -691
+#define IR_LEFT_C           9
+#define IR_LEFT_MIN_ADC   1372   // ADC at ~12 inches
 
 // returns distance in mm for the right IR sensor (PA26, ADC0 ch1)
 int32_t IRDistance_Right(int32_t adcSample){
