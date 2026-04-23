@@ -5,10 +5,29 @@
  * A two-pin female header is required on the LaunchPad TP10(XDS_VCC) and TP9(!RSTN)
  */
 
-#define USE_MEDIAN_FILTER 0  // 1 = median (Median5 per sample, 5-sample pace), 0 = mean (8-sample average)
 
-#define angle_ref 5 // degrees "0"
-#define dist_ref 0 // mm
+// Overtake Parameters
+#define FRONT_DETECT    1200
+#define D2_MIN_PASS     250
+#define LD2_MIN_PASS    250
+#define V_MAX_MMPS      1140 // TBD via calibration
+#define V_ALPHA_Q8      77
+#define R_ACC_ALPHA_Q8  205
+#define R_THRESH_BASE   150
+#define R_YAW_GAIN_Q8   77
+#define R_CAP           2000
+#define OFFSET_CMD      180
+#define OFFSET_RATE     20
+#define GZ_RAMP_GATE    500
+#define PASS_CLEAR      900
+#define T_CLEAR_MS      500
+#define T_PASS_MIN      400
+#define T_SETTLE        300
+#define ABORT_SIDE      150
+#define ABORT_GZ        1200
+#define ABORT_DF        300 // guessed value
+
+#define CALIB_THROTTLE 9500
 
 // PD weights
 #define kp_d 1
@@ -36,6 +55,15 @@
 #include "Model.h"
 #include "IMU.h"
 #include <stdio.h>
+#include <stdlib.h>
+
+
+#define USE_MEDIAN_FILTER 0  // 1 = median (Median5 per sample, 5-sample pace), 0 = mean (8-sample average)
+
+#define angle_ref 5 // degrees "0"
+
+static int32_t dist_ref_cur = 0; // mm
+
 // PA10 is UART0 Tx    index 20 in IOMUX PINCM table
 // PA11 is UART0 Rx    index 21 in IOMUX PINCM table
 // Insert jumper J25: Connects PA10 to XDS_UART
@@ -337,7 +365,7 @@ void StartFileDump(char *pt){
   OS_bWait(&LCDFree);
   eFile_Create(pt); // ignore error if file already exists
   if(eFile_WOpen(pt))  diskError("eFile_WOpen",0);
-  if(eFile_WriteString("time_ms,ir_r,ir_l,tf_r,tf_l,tf_front,throttle_l,throttle_r,steering,gyro_z,accel_x,accel_y\n"))  diskError("eFile_WriteString",0);
+  if(eFile_WriteString("time_ms,ir_r,ir_l,tf_r,tf_l,tf_front,throttle_l,throttle_r,steering,gyro_z,accel_x,accel_y,ot_state,dist_ref_cur\n"))  diskError("eFile_WriteString",0);
   OS_bSignal(&LCDFree);
 }
 void EndFileDump(){
@@ -356,7 +384,7 @@ void FileDump(uint32_t data, uint32_t data2){
   ClrPB4();
 }
 
-#define NUMCOLS 12
+#define NUMCOLS 14
 // Dump row into csv
 int FileDumpRow(int32_t* row){
   OS_bWait(&LCDFree);
@@ -381,6 +409,128 @@ int FileDumpRow(int32_t* row){
 
   OS_bSignal(&LCDFree);
   return 0;
+}
+
+typedef enum { S_FOLLOW, S_DETECT, S_COMMIT, S_PASS, S_REJOIN } overtake_state_t;
+static overtake_state_t ot_state = S_FOLLOW;
+static int32_t ot_side = 0;
+static uint32_t ot_detect_cnt = 0;
+static uint32_t ot_state_entry_ms = 0;
+static uint32_t ot_clear_since_ms = 0;
+static int32_t front_prev_filt = 0;
+static int32_t dist_ref_target = 0;
+static int32_t v_hat = 0;
+static int32_t r_acc = 0;
+static int32_t prev_throttle_avg = 0;
+static int32_t front_m1 = 0;
+static int32_t front_m2 = 0;
+
+static int32_t median3_i32(int32_t a, int32_t b, int32_t c) {
+    if ((a <= b && b <= c) || (c <= b && b <= a)) return b;
+    if ((b <= a && a <= c) || (c <= a && a <= b)) return a;
+    return c;
+}
+
+static int32_t ramp_toward(int32_t cur, int32_t tgt, int32_t step) {
+    if (cur < tgt) {
+        cur += step;
+        if (cur > tgt) cur = tgt;
+    } else if (cur > tgt) {
+        cur -= step;
+        if (cur < tgt) cur = tgt;
+    }
+    return cur;
+}
+
+static int32_t throttle_to_v_mmps(int32_t throttle) {
+    if (throttle < 0) throttle = 0;
+    return (int32_t)((long long)throttle * V_MAX_MMPS / 9999);
+}
+
+static overtake_state_t overtake_step(int32_t front_filt, int32_t r_acc_in, int32_t r_thresh, int32_t d2, int32_t ld2, int32_t gz_ddps, uint32_t now_ms) {
+    overtake_state_t next_state = ot_state;
+    
+    if (ot_state != S_FOLLOW && ot_state != S_DETECT) {
+        int abort_flag = 0;
+        if (front_filt < 200) abort_flag = 1;
+        if (abs(gz_ddps) > ABORT_GZ) abort_flag = 1;
+        if (ot_state == S_COMMIT || ot_state == S_PASS) {
+            if (ot_side == -1 && d2 < ABORT_SIDE) abort_flag = 1;
+            if (ot_side == 1 && ld2 < ABORT_SIDE) abort_flag = 1;
+        }
+        int32_t df_dt = front_filt - front_prev_filt; 
+        if (ot_state == S_COMMIT && df_dt > ABORT_DF) abort_flag = 1;
+        
+        if (abort_flag) {
+            dist_ref_target = 0;
+            return S_FOLLOW;
+        }
+    }
+
+    switch(ot_state) {
+        case S_FOLLOW:
+            dist_ref_target = 0;
+            if (front_filt < FRONT_DETECT && r_acc_in > r_thresh && (d2 > D2_MIN_PASS || ld2 > LD2_MIN_PASS)) {
+                next_state = S_DETECT;
+                ot_detect_cnt = 0;
+            }
+            break;
+            
+        case S_DETECT:
+            dist_ref_target = 0;
+            if (front_filt < FRONT_DETECT && r_acc_in > r_thresh) {
+                if (d2 >= D2_MIN_PASS && d2 >= ld2) { // pass right
+                    ot_side = -1;
+                    dist_ref_target = -OFFSET_CMD;
+                    next_state = S_COMMIT;
+                    ot_state_entry_ms = now_ms;
+                } else if (ld2 >= LD2_MIN_PASS) { // pass left
+                    ot_side = 1;
+                    dist_ref_target = +OFFSET_CMD;
+                    next_state = S_COMMIT;
+                    ot_state_entry_ms = now_ms;
+                } else {
+                    if (front_filt < 400) next_state = S_FOLLOW;
+                }
+            } else {
+                next_state = S_FOLLOW;
+            }
+            break;
+            
+        case S_COMMIT:
+            if (abs(dist_ref_cur - dist_ref_target) < 10) {
+                next_state = S_PASS;
+                ot_state_entry_ms = now_ms;
+                ot_clear_since_ms = 0;
+            }
+            break;
+            
+        case S_PASS:
+            if (front_filt > PASS_CLEAR) {
+                if (ot_clear_since_ms == 0) ot_clear_since_ms = now_ms;
+                if ((now_ms - ot_clear_since_ms) > T_CLEAR_MS && (now_ms - ot_state_entry_ms) > T_PASS_MIN) {
+                    next_state = S_REJOIN;
+                    dist_ref_target = 0;
+                    ot_state_entry_ms = now_ms;
+                }
+            } else {
+                ot_clear_since_ms = 0;
+            }
+            break;
+            
+        case S_REJOIN:
+            if (ot_side == -1 && d2 < ABORT_SIDE) { dist_ref_target = -OFFSET_CMD; next_state = S_PASS; }
+            if (ot_side == 1 && ld2 < ABORT_SIDE) { dist_ref_target = +OFFSET_CMD; next_state = S_PASS; }
+            
+            if (abs(dist_ref_cur) < 10) {
+                if ((now_ms - ot_state_entry_ms) > T_SETTLE) {
+                    next_state = S_FOLLOW;
+                }
+            }
+            break;
+    }
+    
+    return next_state;
 }
 
 //******** Robot *************** 
@@ -469,12 +619,42 @@ void Robot(void){
     if (d2  > 600 && d2  > d_ir  + 150) d_ir  = 305;
     if (ld2 > 600 && ld2 > ld_ir + 150) ld_ir = 305;
 
+    // Read IMU to use for controller refinement
+    long sr = StartCritical();
+    int16_t gz_raw = IMU_GyroZ;
+    int16_t ax = IMU_AccelX;
+    int16_t ay = IMU_AccelY;
+    EndCritical(sr);
+
+    int16_t gz = (int16_t)(gz_raw - gyroZ_bias); // bias-corrected for heuristic path
+    int32_t ax_mg = ((int32_t)ax * 1000) / ACCEL_SCALE; 
+    int32_t gz_ddps = ((int32_t)gz * 10) / GYRO_SCALE;
+
+    __disable_irq();
+    int32_t front = (int32_t)FrontDist;
+    __enable_irq();
+
+    int32_t front_filt = median3_i32(front, front_m1, front_m2);
+    int32_t dt_ms = elapsed ? elapsed : 20;
+    int32_t v_meas = throttle_to_v_mmps(prev_throttle_avg);
+    v_hat = v_hat + (((v_meas - v_hat) * V_ALPHA_Q8) >> 8);
+    int32_t front_pred = front_prev_filt - (v_hat * dt_ms) / 1000;
+    int32_t r = front_filt - front_pred;
+    r_acc = ((r_acc * R_ACC_ALPHA_Q8) >> 8) + r;
+    if (r_acc >  R_CAP) r_acc =  R_CAP;
+    if (r_acc < -R_CAP) r_acc = -R_CAP;
+    int32_t r_thresh = R_THRESH_BASE + ((R_YAW_GAIN_Q8 * abs(gz_ddps)) >> 8);
+    ot_state = overtake_step(front_filt, r_acc, r_thresh, d2, ld2, gz_ddps, OS_MsTime());
+    int32_t ramp = (abs(gz_ddps) > GZ_RAMP_GATE) ? OFFSET_RATE/2 : OFFSET_RATE;
+    dist_ref_cur = ramp_toward(dist_ref_cur, dist_ref_target, ramp);
+    front_m2 = front_m1; front_m1 = front_filt; front_prev_filt = front_filt;
+
     int32_t angle   = arctan(((int32_t)(d_ir*1414)  - (int32_t)(d2*1000)) /(int32_t)(224+d2))  - angle_ref;
     int32_t L_angle = arctan(((int32_t)(ld_ir*1414) - (int32_t)(ld2*1000))/(int32_t)(224+ld2));
 
     int32_t realDist   = (d_ir  * cosine(angle))   / 1000;
     int32_t L_realDist = (ld_ir * cosine(L_angle)) / 1000;
-    int32_t e_d = realDist - L_realDist - dist_ref;
+    int32_t e_d = realDist - L_realDist - dist_ref_cur;
 
     int32_t intend_angle = ((kp_d * e_d) / 10) + ((kd_d * (e_d - prevError)) / 10);
     prevError = e_d;
@@ -483,13 +663,9 @@ void Robot(void){
     int32_t steeringAngle = ((e_a * kp_a) / 10) + (((e_a - prevE_A) * kd_a) / 10);
     prevE_A = e_a;
 
-    __disable_irq();
-    int32_t front = (int32_t)FrontDist;
-    __enable_irq();
-
     uint16_t throttle = 9999; // max throttle
     // Follow the gap kicks in when turn comes up
-    if(front < 800){
+    if(ot_state != S_COMMIT && ot_state != S_PASS && front < 800){
       if (front < 600) throttle -= 1000;
       if (front < 400) throttle -= 1000;
       if (front < 200) throttle -= 1000;
@@ -507,21 +683,9 @@ void Robot(void){
       continue;
     }
 
-    // Read IMU to use for controller refinement
-    long sr = StartCritical();
-    int16_t gz_raw = IMU_GyroZ;
-    int16_t ax = IMU_AccelX;
-    int16_t ay = IMU_AccelY;
-    EndCritical(sr);
-
-    int16_t gz = (int16_t)(gz_raw - gyroZ_bias); // bias-corrected for heuristic path
-
     // Differential steering and IMU-based Traction Control / Braking
     int32_t t_l = throttle;
     int32_t t_r = throttle;
-
-    int32_t ax_mg = ((int32_t)ax * 1000) / ACCEL_SCALE; 
-    int32_t gz_ddps = ((int32_t)gz * 10) / GYRO_SCALE;
 
     // If we're pulling too many lateral G's, we need to slow down
     if (ax_mg > 500 || ax_mg < -500) {
@@ -576,7 +740,9 @@ void Robot(void){
     Model_Inference();
 
     // Apply model output to PD controller
-    Model_ApplyResidual(&throttle_l, &throttle_r, &steeringAngle);
+    if (ot_state == S_FOLLOW) {
+      Model_ApplyResidual(&throttle_l, &throttle_r, &steeringAngle);
+    }
 
     // Wait till after residuals are applied, so input to next is an accurate reflection
     Model_Inputs[throttle_left_prev] = Model_Normalize(throttle_l, CAP_THROTTLE);
@@ -584,9 +750,10 @@ void Robot(void){
     Model_Inputs[steering_prev] = Model_NormalizeSigned(steeringAngle, CAP_STEERING);
 
     CAN_SetMotors(throttle_l, throttle_r, steeringAngle);
+    prev_throttle_avg = ((int32_t)throttle_l + throttle_r) / 2;
 
     // Data collection
-    int32_t row[NUMCOLS] = {OS_MsTime(), d_ir, ld_ir, d2, ld2, front, throttle_l, throttle_r, steeringAngle, gz_raw, ax, ay};
+    int32_t row[NUMCOLS] = {OS_MsTime(), d_ir, ld_ir, d2, ld2, front, throttle_l, throttle_r, steeringAngle, gz_raw, ax, ay, ot_state, dist_ref_cur};
     if (FileDumpRow(row)){
       EndFileDump();
       char* name;
@@ -605,6 +772,120 @@ void Robot(void){
   Running = 0;             // robot no longer running
   OS_Kill();
 }
+
+void RobotCalib(void){
+  DataLost = 0;       // new run with no lost data 
+  FilterWork = 0;
+  Running = 1;
+  Jitter3_Init();
+  OS_ClearMsTime();    
+  OS_Fifo_Init(256);
+  NumCreated += OS_AddThread(&Display,128,0); 
+  UART_OutString("RobotCalib running...");
+  StartFileDump(FileName);
+  OS_ClearMsTime();
+  while (LaunchPad_InS2() == 0); // WAIT FOR USER
+
+  // Gyro-Z bias estimation. Robot must remain stationary.
+  UART_OutString("Calibrating IMU...");
+  OS_Sleep(1000);
+  int32_t gzSum = 0;
+  const uint32_t BIAS_SAMPLES = 64; 
+  for (uint32_t i = 0; i < BIAS_SAMPLES; i++) {
+    long csr = StartCritical();
+    int16_t g = IMU_GyroZ;
+    EndCritical(csr);
+    gzSum += g;
+    OS_Sleep(25); 
+  }
+  gyroZ_bias = (int16_t)(gzSum / (int32_t)BIAS_SAMPLES);
+  UART_OutString(" gz_bias=");
+  UART_OutSDec(gyroZ_bias);
+  UART_OutString("\n\r");
+
+  startTime = OS_MsTime();
+  uint32_t calibStartTime = OS_MsTime();
+  int32_t lastFront = -1;
+  int32_t lastTime = OS_MsTime();
+  int32_t totalVel = 0;
+  int32_t velCount = 0;
+
+  prevTime = OS_MsTime();
+  while(Running) {
+    elapsed = OS_MsTime() - prevTime;
+    prevTime = OS_MsTime();
+#if USE_MEDIAN_FILTER
+    for (uint8_t i = 0; i < 5; i++) {
+      OS_bWait(&TFLuna3Ready);
+      OS_bWait(&TFLuna2Ready);
+    }
+    __disable_irq();
+    uint32_t d2  = Distance2;
+    uint32_t ld2 = L_Distance2;
+    __enable_irq();
+#else
+    uint32_t d2 = 0;
+    uint32_t ld2 = 0;
+    for (uint8_t i = 0; i < 8; i++) {
+      OS_bWait(&TFLuna3Ready);  
+      OS_bWait(&TFLuna2Ready);  
+      __disable_irq();
+      d2 += Distance2;
+      ld2 += L_Distance2;
+      __enable_irq();
+    }
+    d2 >>= 3;
+    ld2 >>= 3;
+#endif
+
+    __disable_irq();
+    uint32_t d_ir  = Distance;
+    uint32_t ld_ir = L_Distance;
+    __enable_irq();
+
+    if (d2  > 600 && d2  > d_ir  + 150) d_ir  = 305;
+    if (ld2 > 600 && ld2 > ld_ir + 150) ld_ir = 305;
+
+    __disable_irq();
+    int32_t front = (int32_t)FrontDist;
+    __enable_irq();
+
+    int32_t steeringAngle = 0;
+    uint16_t throttle = CALIB_THROTTLE;
+
+    // Condition to start recording velocity
+    uint32_t now = OS_MsTime();
+    if ((now - calibStartTime > 500) && (front >= 50 && front <= 1000)) {
+        if (lastFront != -1 && (now - lastTime) > 0) {
+            int32_t v_current = -(front - lastFront) * 1000 / (int32_t)(now - lastTime);
+            totalVel += v_current;
+            velCount++;
+        }
+    }
+
+    lastFront = front;
+    lastTime = now;
+
+    if (front < 50) { 
+      // Stop and display
+      CAN_SetMotors(0, 0, 0);
+      int32_t avgVel = (velCount > 0) ? (totalVel / velCount) : 0;
+      ST7735_OutString("Calib Done!");
+      ST7735_Message(0, 0, "Calib Avg Vel ", avgVel);
+      ST7735_Message(0, 1, "Vel(mm/s):", avgVel);
+      while(1) { CAN_SetMotors(0, 0, 0); }
+    }
+
+    CAN_SetMotors(throttle, throttle, steeringAngle);
+
+    int32_t row[NUMCOLS] = {OS_MsTime(), d_ir, ld_ir, d2, ld2, front, throttle, throttle, steeringAngle, 0, 0, 0, ot_state, dist_ref_cur};
+    if (FileDumpRow(row)){
+      EndFileDump();
+      while (1){ CAN_SetMotors(0, 0, 0); }
+    }
+  }
+}
+
  //************S2Push*************
 // Called when S2 Button pushed, fall of PB21
 // Adds another Robot foreground task
