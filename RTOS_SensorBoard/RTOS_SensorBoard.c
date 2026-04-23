@@ -497,23 +497,23 @@ void Robot(void){
     int32_t t_l = throttle;
     int32_t t_r = throttle;
 
-    int32_t ax_mg = ((int32_t)ax * 1000) / 16384; 
-    int32_t gz_ddps = ((int32_t)gz * 10) / 131;
+    int32_t ax_mg = ((int32_t)ax * 1000) / ACCEL_SCALE; 
+    int32_t gz_ddps = ((int32_t)gz * 10) / GYRO_SCALE;
 
-    // Look-Ahead Braking (Preventing Terminal Understeer)
+    // If we're pulling too many lateral G's, we need to slow down
     if (ax_mg > 500 || ax_mg < -500) {
         t_l -= 2500;
         t_r -= 2500;
     }
 
-    // Traction Control (Slip Detection)
+    // If we're supposed to be turning but we're not, differential steering to force us to rotate
     if (steeringAngle > 15 && gz_ddps > -500) { 
         t_l -= 3500; 
     }
     else if (steeringAngle < -15 && gz_ddps < 500) {
         t_r -= 3500;
     } else {
-        // Fallback to basic differential steering
+        // Fallback to basic differential steering (older algorithm before IMU)
         if (steeringAngle <= -15) {
             t_r -= 2000;
         }

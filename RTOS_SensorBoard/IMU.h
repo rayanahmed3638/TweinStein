@@ -21,6 +21,10 @@
 // Must be power of 2 so compiler uses shift for divide.
 #define IMU_AVG_SAMPLES  4
 
+// Conversion scales
+#define ACCEL_SCALE 16384 // for 1 G
+#define GYRO_SCALE 131 // degrees/sec
+
 // Latest sensor readings, updated on each IMU_Read call.
 // Raw signed 16-bit ADC counts (big-endian from chip, assembled).
 // Default scale factors
