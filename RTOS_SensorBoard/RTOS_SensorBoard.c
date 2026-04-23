@@ -394,7 +394,8 @@ int32_t prevError = 0;
 int32_t prevE_A = 0;
 uint32_t prevTime = 0;
 uint32_t startTime = 0;
-void Robot(void){   
+int16_t gyroZ_bias = 0;
+void Robot(void){
   DataLost = 0;       // new run with no lost data 
   FilterWork = 0;
   Running = 1;
@@ -407,6 +408,26 @@ void Robot(void){
   StartFileDump(FileName);
   OS_ClearMsTime();
   while (LaunchPad_InS2() == 0); // REMOVE AFTER DATA COLLECTION
+
+  // Gyro-Z bias estimation. Robot must remain stationary.
+  // 1 s settle buffer so the user's hand leaves S2 and any vibration decays;
+  // motors stay idle until the control loop below.
+  UART_OutString("Calibrating IMU...");
+  OS_Sleep(1000);
+  int32_t gzSum = 0;
+  const uint32_t BIAS_SAMPLES = 64; // ~1.6 s at 25 ms spacing
+  for (uint32_t i = 0; i < BIAS_SAMPLES; i++) {
+    long csr = StartCritical();
+    int16_t g = IMU_GyroZ;
+    EndCritical(csr);
+    gzSum += g;
+    OS_Sleep(25); // IMU_Task updates every 20 ms; 25 ms guarantees a fresh sample
+  }
+  gyroZ_bias = (int16_t)(gzSum / (int32_t)BIAS_SAMPLES);
+  UART_OutString(" gz_bias=");
+  UART_OutSDec(gyroZ_bias);
+  UART_OutString("\n\r");
+
   startTime = OS_MsTime();
   while(1) {
     elapsed = OS_MsTime() - prevTime;
@@ -488,10 +509,12 @@ void Robot(void){
 
     // Read IMU to use for controller refinement
     long sr = StartCritical();
-    int16_t gz = IMU_GyroZ;
+    int16_t gz_raw = IMU_GyroZ;
     int16_t ax = IMU_AccelX;
     int16_t ay = IMU_AccelY;
     EndCritical(sr);
+
+    int16_t gz = (int16_t)(gz_raw - gyroZ_bias); // bias-corrected for heuristic path
 
     // Differential steering and IMU-based Traction Control / Braking
     int32_t t_l = throttle;
@@ -545,7 +568,7 @@ void Robot(void){
     Model_Inputs[angle_left] = (L_angle + CAP_ANGLE) << (16 - CAP_ANGLE_POW - 1);
     Model_Inputs[angle_right] = (angle + CAP_ANGLE) << (16 - CAP_ANGLE_POW - 1);
 
-    Model_Inputs[yaw_rate]   = Model_NormalizeSigned((int32_t)(-gz), CAP_YAW);
+    Model_Inputs[yaw_rate]   = Model_NormalizeSigned((int32_t)(-gz_raw), CAP_YAW);
     Model_Inputs[accel_lat]  = Model_NormalizeSigned((int32_t)ax, CAP_ACCEL);
     Model_Inputs[accel_long] = Model_NormalizeSigned((int32_t)ay, CAP_ACCEL);
 
@@ -563,7 +586,7 @@ void Robot(void){
     CAN_SetMotors(throttle_l, throttle_r, steeringAngle);
 
     // Data collection
-    int32_t row[NUMCOLS] = {OS_MsTime(), d_ir, ld_ir, d2, ld2, front, throttle_l, throttle_r, steeringAngle, gz, ax, ay};
+    int32_t row[NUMCOLS] = {OS_MsTime(), d_ir, ld_ir, d2, ld2, front, throttle_l, throttle_r, steeringAngle, gz_raw, ax, ay};
     if (FileDumpRow(row)){
       EndFileDump();
       char* name;
