@@ -753,18 +753,18 @@ void Robot(void){
     prev_throttle_avg = ((int32_t)throttle_l + throttle_r) / 2;
 
     // Data collection
-    int32_t row[NUMCOLS] = {OS_MsTime(), d_ir, ld_ir, d2, ld2, front, throttle_l, throttle_r, steeringAngle, gz_raw, ax, ay, ot_state, dist_ref_cur};
-    if (FileDumpRow(row)){
-      EndFileDump();
-      char* name;
-      unsigned long size;
-      eFile_DirNext(&name, &size);
-      ST7735_Message(0, 2, "File dump complete ", 0);
-      ST7735_Message(0, 3, "File size: ", size);
-      while (1){ // Stop robot when we can no longer log
-        CAN_SetMotors(0, 0, 0);
-      }
-    }
+    // int32_t row[NUMCOLS] = {OS_MsTime(), d_ir, ld_ir, d2, ld2, front, throttle_l, throttle_r, steeringAngle, gz_raw, ax, ay};
+    // if (FileDumpRow(row)){
+    //   EndFileDump();
+    //   char* name;
+    //   unsigned long size;
+    //   eFile_DirNext(&name, &size);
+    //   ST7735_Message(0, 2, "File dump complete ", 0);
+    //   ST7735_Message(0, 3, "File size: ", size);
+    //   while (1){ // Stop robot when we can no longer log
+    //     CAN_SetMotors(0, 0, 0);
+    //   }
+    // }
   }
   EndFileDump();
   UART_OutString("done.\n\r>");
