@@ -486,14 +486,48 @@ void Robot(void){
       continue;
     }
 
-    // Differential steering
-    uint16_t throttle_l = throttle, throttle_r = throttle;
-    if (steeringAngle <= -15) {
-      throttle_r -= 2000;
+    // Read IMU to use for controller refinement
+    long sr = StartCritical();
+    int16_t gz = IMU_GyroZ;
+    int16_t ax = IMU_AccelX;
+    int16_t ay = IMU_AccelY;
+    EndCritical(sr);
+
+    // Differential steering and IMU-based Traction Control / Braking
+    int32_t t_l = throttle;
+    int32_t t_r = throttle;
+
+    int32_t ax_mg = ((int32_t)ax * 1000) / 16384; 
+    int32_t gz_ddps = ((int32_t)gz * 10) / 131;
+
+    // Look-Ahead Braking (Preventing Terminal Understeer)
+    if (ax_mg > 500 || ax_mg < -500) {
+        t_l -= 2500;
+        t_r -= 2500;
     }
-    else if (steeringAngle >= 15) {
-      throttle_l -= 2000;
+
+    // Traction Control (Slip Detection)
+    if (steeringAngle > 15 && gz_ddps > -500) { 
+        t_l -= 3500; 
     }
+    else if (steeringAngle < -15 && gz_ddps < 500) {
+        t_r -= 3500;
+    } else {
+        // Fallback to basic differential steering
+        if (steeringAngle <= -15) {
+            t_r -= 2000;
+        }
+        else if (steeringAngle >= 15) {
+            t_l -= 2000;
+        }
+    }
+    
+    // Prevent underflow
+    if (t_l < 0) t_l = 0;
+    if (t_r < 0) t_r = 0;
+
+    uint16_t throttle_l = (uint16_t)t_l;
+    uint16_t throttle_r = (uint16_t)t_r;
 
     // Normalize inputs to model
     // Want to place inputs in range [0, 65536], or [0,1] in fixed point
@@ -511,11 +545,6 @@ void Robot(void){
     Model_Inputs[angle_left] = (L_angle + CAP_ANGLE) << (16 - CAP_ANGLE_POW - 1);
     Model_Inputs[angle_right] = (angle + CAP_ANGLE) << (16 - CAP_ANGLE_POW - 1);
 
-    long sr = StartCritical();
-    int16_t gz = IMU_GyroZ;
-    int16_t ax = IMU_AccelX;
-    int16_t ay = IMU_AccelY;
-    EndCritical(sr);
     Model_Inputs[yaw_rate]   = Model_NormalizeSigned((int32_t)(-gz), CAP_YAW);
     Model_Inputs[accel_lat]  = Model_NormalizeSigned((int32_t)ax, CAP_ACCEL);
     Model_Inputs[accel_long] = Model_NormalizeSigned((int32_t)ay, CAP_ACCEL);
