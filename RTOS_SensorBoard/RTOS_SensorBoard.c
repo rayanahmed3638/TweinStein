@@ -365,7 +365,7 @@ void StartFileDump(char *pt){
   OS_bWait(&LCDFree);
   eFile_Create(pt); // ignore error if file already exists
   if(eFile_WOpen(pt))  diskError("eFile_WOpen",0);
-  if(eFile_WriteString("time_ms,ir_r,ir_l,tf_r,tf_l,tf_front,throttle_l,throttle_r,steering,gyro_z,accel_x,accel_y,ot_state,dist_ref_cur\n"))  diskError("eFile_WriteString",0);
+  if(eFile_WriteString("time_ms,elapsed,tf_r,tf_l,tf_front,sp,ot_state\n"))  diskError("eFile_WriteString",0);
   OS_bSignal(&LCDFree);
 }
 void EndFileDump(){
@@ -384,7 +384,7 @@ void FileDump(uint32_t data, uint32_t data2){
   ClrPB4();
 }
 
-#define NUMCOLS 14
+#define NUMCOLS 7
 // Dump row into csv
 int FileDumpRow(int32_t* row){
   OS_bWait(&LCDFree);
@@ -752,19 +752,22 @@ void Robot(void){
     CAN_SetMotors(throttle_l, throttle_r, steeringAngle);
     prev_throttle_avg = ((int32_t)throttle_l + throttle_r) / 2;
 
+    uint32_t sp;
+    __asm volatile ("mov %0, sp" : "=r" (sp));
+
     // Data collection
-    // int32_t row[NUMCOLS] = {OS_MsTime(), d_ir, ld_ir, d2, ld2, front, throttle_l, throttle_r, steeringAngle, gz_raw, ax, ay};
-    // if (FileDumpRow(row)){
-    //   EndFileDump();
-    //   char* name;
-    //   unsigned long size;
-    //   eFile_DirNext(&name, &size);
-    //   ST7735_Message(0, 2, "File dump complete ", 0);
-    //   ST7735_Message(0, 3, "File size: ", size);
-    //   while (1){ // Stop robot when we can no longer log
-    //     CAN_SetMotors(0, 0, 0);
-    //   }
-    // }
+    int32_t row[NUMCOLS] = {OS_MsTime(), elapsed, d2, ld2, front, (int32_t)sp, ot_state};
+    if (FileDumpRow(row)){
+      EndFileDump();
+      char* name;
+      unsigned long size;
+      eFile_DirNext(&name, &size);
+      ST7735_Message(0, 2, "File dump complete ", 0);
+      ST7735_Message(0, 3, "File size: ", size);
+      while (1){ // Stop robot when we can no longer log
+        CAN_SetMotors(0, 0, 0);
+      }
+    }
   }
   EndFileDump();
   UART_OutString("done.\n\r>");
