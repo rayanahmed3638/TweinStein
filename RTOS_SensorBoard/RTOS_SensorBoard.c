@@ -104,13 +104,13 @@ uint32_t NumCreated;   // number of foreground threads created
 // Jumper J15 select PA16
 void Logic_Init(void){
   IOMUX->SECCFG.PINCM[PA8INDEX] = (uint32_t) 0x00000081;
-  IOMUX->SECCFG.PINCM[PB23INDEX] = (uint32_t) 0x00000081;
+  IOMUX->SECCFG.PINCM[PB23INDEX] = (uint32_t) 0x00000081; //****CHANGE from PA9****
   IOMUX->SECCFG.PINCM[PA16INDEX] = (uint32_t) 0x00000081;
   IOMUX->SECCFG.PINCM[PB4INDEX] = (uint32_t) 0x00000081;
   IOMUX->SECCFG.PINCM[PB1INDEX] = (uint32_t) 0x00000081;
   IOMUX->SECCFG.PINCM[PB20INDEX] = (uint32_t) 0x00000081;
-  GPIOA->DOE31_0 |= (1<<8)|(1<<16);
-  GPIOB->DOE31_0 |= (1<<4)|(1<<1)|(1<<20)|(1<<23);
+  GPIOA->DOE31_0 |= (1<<8)|(1<<16);  //****CHANGE removing PA9****
+  GPIOB->DOE31_0 |= (1<<4)|(1<<1)|(1<<20)|(1<<23);//****CHANGE adding PB23****
 }
 #define TogglePA8() (GPIOA->DOUTTGL31_0 = (1<<8))
 #define SetPA8() (GPIOA->DOUTSET31_0 = (1<<8))
@@ -669,7 +669,7 @@ void Robot(void){
       if (front < 600) throttle -= 1000;
       if (front < 400) throttle -= 1000;
       if (front < 200) throttle -= 1000;
-      int32_t urgency = (800-front) >> 3;
+      int32_t urgency = (800-front) >> 2; // steer even harder for race day track
       steeringAngle = (ld2 > d2) ? -urgency : urgency; // turn left if more room on left
     }
 
@@ -718,175 +718,62 @@ void Robot(void){
 
     // Normalize inputs to model
     // Want to place inputs in range [0, 65536], or [0,1] in fixed point
-    Model_Inputs[ir_right] = Model_Normalize(d_ir, CAP_IR);
-    Model_Inputs[ir_left] = Model_Normalize(ld_ir, CAP_IR);
-    Model_Inputs[tf_left] = Model_Normalize(ld2, CAP_TFLUNA);
-    Model_Inputs[tf_middle] = Model_Normalize(front, CAP_TFLUNA);
-    Model_Inputs[tf_right] = Model_Normalize(d2, CAP_TFLUNA);
-    // Clamp angles
-    if (L_angle < -CAP_ANGLE) L_angle = -CAP_ANGLE;
-    if (L_angle > CAP_ANGLE) L_angle = CAP_ANGLE;
-    if (angle < -CAP_ANGLE) angle = -CAP_ANGLE;
-    if (angle > CAP_ANGLE) angle = CAP_ANGLE;
-    // Normalize angles
-    Model_Inputs[angle_left] = (L_angle + CAP_ANGLE) << (16 - CAP_ANGLE_POW - 1);
-    Model_Inputs[angle_right] = (angle + CAP_ANGLE) << (16 - CAP_ANGLE_POW - 1);
+    // Model_Inputs[ir_right] = Model_Normalize(d_ir, CAP_IR);
+    // Model_Inputs[ir_left] = Model_Normalize(ld_ir, CAP_IR);
+    // Model_Inputs[tf_left] = Model_Normalize(ld2, CAP_TFLUNA);
+    // Model_Inputs[tf_middle] = Model_Normalize(front, CAP_TFLUNA);
+    // Model_Inputs[tf_right] = Model_Normalize(d2, CAP_TFLUNA);
+    // // Clamp angles
+    // if (L_angle < -CAP_ANGLE) L_angle = -CAP_ANGLE;
+    // if (L_angle > CAP_ANGLE) L_angle = CAP_ANGLE;
+    // if (angle < -CAP_ANGLE) angle = -CAP_ANGLE;
+    // if (angle > CAP_ANGLE) angle = CAP_ANGLE;
+    // // Normalize angles
+    // Model_Inputs[angle_left] = (L_angle + CAP_ANGLE) << (16 - CAP_ANGLE_POW - 1);
+    // Model_Inputs[angle_right] = (angle + CAP_ANGLE) << (16 - CAP_ANGLE_POW - 1);
 
-    Model_Inputs[yaw_rate]   = Model_NormalizeSigned((int32_t)(-gz_raw), CAP_YAW);
-    Model_Inputs[accel_lat]  = Model_NormalizeSigned((int32_t)ax, CAP_ACCEL);
-    Model_Inputs[accel_long] = Model_NormalizeSigned((int32_t)ay, CAP_ACCEL);
+    // Model_Inputs[yaw_rate]   = Model_NormalizeSigned((int32_t)(-gz_raw), CAP_YAW);
+    // Model_Inputs[accel_lat]  = Model_NormalizeSigned((int32_t)ax, CAP_ACCEL);
+    // Model_Inputs[accel_long] = Model_NormalizeSigned((int32_t)ay, CAP_ACCEL);
 
-    // Call model inference
-    Model_Inference();
+    // // Call model inference
+    // Model_Inference();
 
-    // Apply model output to PD controller
-    if (ot_state == S_FOLLOW) {
-      Model_ApplyResidual(&throttle_l, &throttle_r, &steeringAngle);
-    }
+    // // Apply model output to PD controller
+    // if (ot_state == S_FOLLOW) {
+    //   Model_ApplyResidual(&throttle_l, &throttle_r, &steeringAngle);
+    // }
 
-    // Wait till after residuals are applied, so input to next is an accurate reflection
-    Model_Inputs[throttle_left_prev] = Model_Normalize(throttle_l, CAP_THROTTLE);
-    Model_Inputs[throttle_right_prev] = Model_Normalize(throttle_r, CAP_THROTTLE);
-    Model_Inputs[steering_prev] = Model_NormalizeSigned(steeringAngle, CAP_STEERING);
+    // // Wait till after residuals are applied, so input to next is an accurate reflection
+    // Model_Inputs[throttle_left_prev] = Model_Normalize(throttle_l, CAP_THROTTLE);
+    // Model_Inputs[throttle_right_prev] = Modesoftwarel_Normalize(throttle_r, CAP_THROTTLE);
+    // Model_Inputs[steering_prev] = Model_NormalizeSigned(steeringAngle, CAP_STEERING);
 
     CAN_SetMotors(throttle_l, throttle_r, steeringAngle);
     prev_throttle_avg = ((int32_t)throttle_l + throttle_r) / 2;
 
-    uint32_t sp;
-    __asm volatile ("mov %0, sp" : "=r" (sp));
+    // uint32_t sp;
+    // __asm volatile ("mov %0, sp" : "=r" (sp));
 
     // Data collection
-    int32_t row[NUMCOLS] = {OS_MsTime(), elapsed, d2, ld2, front, (int32_t)sp, ot_state};
-    if (FileDumpRow(row)){
-      EndFileDump();
-      char* name;
-      unsigned long size;
-      eFile_DirNext(&name, &size);
-      ST7735_Message(0, 2, "File dump complete ", 0);
-      ST7735_Message(0, 3, "File size: ", size);
-      while (1){ // Stop robot when we can no longer log
-        CAN_SetMotors(0, 0, 0);
-      }
-    }
+    // int32_t row[NUMCOLS] = {OS_MsTime(), elapsed, d2, ld2, front, (int32_t)sp, ot_state};
+    // if (FileDumpRow(row)){
+    //   EndFileDump();
+    //   char* name;
+    //   unsigned long size;
+    //   eFile_DirNext(&name, &size);
+    //   ST7735_Message(0, 2, "File dump complete ", 0);
+    //   ST7735_Message(0, 3, "File size: ", size);
+    //   while (1){ // Stop robot when we can no longer log
+    //     CAN_SetMotors(0, 0, 0);
+    //   }
+    // }
   }
   EndFileDump();
   UART_OutString("done.\n\r>");
   FileName[5] = (FileName[5]+1)&0xF7; // 0 to 7
   Running = 0;             // robot no longer running
   OS_Kill();
-}
-
-void RobotCalib(void){
-  DataLost = 0;       // new run with no lost data 
-  FilterWork = 0;
-  Running = 1;
-  Jitter3_Init();
-  OS_ClearMsTime();    
-  OS_Fifo_Init(256);
-  NumCreated += OS_AddThread(&Display,128,0); 
-  UART_OutString("RobotCalib running...");
-  StartFileDump(FileName);
-  OS_ClearMsTime();
-  while (LaunchPad_InS2() == 0); // WAIT FOR USER
-
-  // Gyro-Z bias estimation. Robot must remain stationary.
-  UART_OutString("Calibrating IMU...");
-  OS_Sleep(1000);
-  int32_t gzSum = 0;
-  const uint32_t BIAS_SAMPLES = 64; 
-  for (uint32_t i = 0; i < BIAS_SAMPLES; i++) {
-    long csr = StartCritical();
-    int16_t g = IMU_GyroZ;
-    EndCritical(csr);
-    gzSum += g;
-    OS_Sleep(25); 
-  }
-  gyroZ_bias = (int16_t)(gzSum / (int32_t)BIAS_SAMPLES);
-  UART_OutString(" gz_bias=");
-  UART_OutSDec(gyroZ_bias);
-  UART_OutString("\n\r");
-
-  startTime = OS_MsTime();
-  uint32_t calibStartTime = OS_MsTime();
-  int32_t lastFront = -1;
-  int32_t lastTime = OS_MsTime();
-  int32_t totalVel = 0;
-  int32_t velCount = 0;
-
-  prevTime = OS_MsTime();
-  while(Running) {
-    elapsed = OS_MsTime() - prevTime;
-    prevTime = OS_MsTime();
-#if USE_MEDIAN_FILTER
-    for (uint8_t i = 0; i < 5; i++) {
-      OS_bWait(&TFLuna3Ready);
-      OS_bWait(&TFLuna2Ready);
-    }
-    __disable_irq();
-    uint32_t d2  = Distance2;
-    uint32_t ld2 = L_Distance2;
-    __enable_irq();
-#else
-    uint32_t d2 = 0;
-    uint32_t ld2 = 0;
-    for (uint8_t i = 0; i < 8; i++) {
-      OS_bWait(&TFLuna3Ready);  
-      OS_bWait(&TFLuna2Ready);  
-      __disable_irq();
-      d2 += Distance2;
-      ld2 += L_Distance2;
-      __enable_irq();
-    }
-    d2 >>= 3;
-    ld2 >>= 3;
-#endif
-
-    __disable_irq();
-    uint32_t d_ir  = Distance;
-    uint32_t ld_ir = L_Distance;
-    __enable_irq();
-
-    if (d2  > 600 && d2  > d_ir  + 150) d_ir  = 305;
-    if (ld2 > 600 && ld2 > ld_ir + 150) ld_ir = 305;
-
-    __disable_irq();
-    int32_t front = (int32_t)FrontDist;
-    __enable_irq();
-
-    int32_t steeringAngle = 0;
-    uint16_t throttle = CALIB_THROTTLE;
-
-    // Condition to start recording velocity
-    uint32_t now = OS_MsTime();
-    if ((now - calibStartTime > 500) && (front >= 50 && front <= 1000)) {
-        if (lastFront != -1 && (now - lastTime) > 0) {
-            int32_t v_current = -(front - lastFront) * 1000 / (int32_t)(now - lastTime);
-            totalVel += v_current;
-            velCount++;
-        }
-    }
-
-    lastFront = front;
-    lastTime = now;
-
-    if (front < 50) { 
-      // Stop and display
-      CAN_SetMotors(0, 0, 0);
-      int32_t avgVel = (velCount > 0) ? (totalVel / velCount) : 0;
-      ST7735_OutString("Calib Done!");
-      ST7735_Message(0, 0, "Calib Avg Vel ", avgVel);
-      ST7735_Message(0, 1, "Vel(mm/s):", avgVel);
-      while(1) { CAN_SetMotors(0, 0, 0); }
-    }
-
-    CAN_SetMotors(throttle, throttle, steeringAngle);
-
-    int32_t row[NUMCOLS] = {OS_MsTime(), d_ir, ld_ir, d2, ld2, front, throttle, throttle, steeringAngle, 0, 0, 0, ot_state, dist_ref_cur};
-    if (FileDumpRow(row)){
-      EndFileDump();
-      while (1){ CAN_SetMotors(0, 0, 0); }
-    }
-  }
 }
 
  //************S2Push*************

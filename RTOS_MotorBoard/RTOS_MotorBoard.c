@@ -97,7 +97,7 @@ uint32_t ChecksWork; // number of checks in 10 second
 uint32_t ServoDuty; // 2000,2250,2500,2750,3000,3250,3500,3750,4000
 #define SERVOMIN 2000      // 1ms
 #define SERVOMAX 4400      // 2ms
-#define SERVOINIT 3200     // 1.5ms
+#define SERVOINIT 3100     // 1.5ms
 #define SERVOPERIOD 40000  // 20ms
 #define SERVOCHANGE 250    // 0.125ms
 //------------------Task 1--------------------------------

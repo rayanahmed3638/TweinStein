@@ -66,7 +66,7 @@ void bump_collision(){
 }
 
 void Set_Servo(int16_t angle){
-   uint32_t center = 3120;
+   uint32_t center = 3100;
 
     if(angle > 53)  angle = 53;
     if(angle < -53) angle = -53;
