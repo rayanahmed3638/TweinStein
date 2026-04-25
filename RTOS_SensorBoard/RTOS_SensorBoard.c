@@ -513,10 +513,15 @@ overtake_state_t overtake_step(int32_t front_filt, int32_t r_acc_in, int32_t r_t
             
         case S_REJOIN:
             // obstacle came back, restart passing
-            if (ot_side == -1 && d2 < ABORT_SIDE) { dist_ref_target = -OFFSET_CMD; next_state = S_PASS; }
-            if (ot_side == 1 && ld2 < ABORT_SIDE) { dist_ref_target = OFFSET_CMD; next_state = S_PASS; }
-            if (abs(dist_ref_cur) < 10 && (now_ms - ot_state_entry_ms) > T_SETTLE)
-                next_state = S_FOLLOW;
+            if (ot_side == -1 && d2 < ABORT_SIDE) {
+              dist_ref_target = -OFFSET_CMD;
+              next_state = S_PASS;
+            }
+            if (ot_side == 1 && ld2 < ABORT_SIDE) {
+              dist_ref_target = OFFSET_CMD;
+              next_state = S_PASS;
+            }
+            if (abs(dist_ref_cur) < 10 && (now_ms - ot_state_entry_ms) > T_SETTLE) next_state = S_FOLLOW;
             break;
     }
     
