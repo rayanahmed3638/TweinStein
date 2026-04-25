@@ -62,7 +62,7 @@
 
 #define angle_ref 5 // degrees "0"
 
-static int32_t dist_ref_cur = 0; // mm
+int32_t dist_ref_cur = 0; // mm
 
 // PA10 is UART0 Tx    index 20 in IOMUX PINCM table
 // PA11 is UART0 Rx    index 21 in IOMUX PINCM table
@@ -412,56 +412,48 @@ int FileDumpRow(int32_t* row){
 }
 
 typedef enum { S_FOLLOW, S_DETECT, S_COMMIT, S_PASS, S_REJOIN } overtake_state_t;
-static overtake_state_t ot_state = S_FOLLOW;
-static int32_t ot_side = 0;
-static uint32_t ot_detect_cnt = 0;
-static uint32_t ot_state_entry_ms = 0;
-static uint32_t ot_clear_since_ms = 0;
-static int32_t front_prev_filt = 0;
-static int32_t dist_ref_target = 0;
-static int32_t v_hat = 0;
-static int32_t r_acc = 0;
-static int32_t prev_throttle_avg = 0;
-static int32_t front_m1 = 0;
-static int32_t front_m2 = 0;
+overtake_state_t ot_state = S_FOLLOW;
+int32_t ot_side = 0;       // -1=right, 1=left
+uint32_t ot_detect_cnt = 0;
+uint32_t ot_state_entry_ms = 0, ot_clear_since_ms = 0;
+int32_t front_prev_filt = 0;
+int32_t dist_ref_target = 0;
+int32_t v_hat = 0, r_acc = 0;
+int32_t prev_throttle_avg = 0;
+int32_t front_m1 = 0, front_m2 = 0;
 
-static int32_t median3_i32(int32_t a, int32_t b, int32_t c) {
+int32_t median3_i32(int32_t a, int32_t b, int32_t c) {
     if ((a <= b && b <= c) || (c <= b && b <= a)) return b;
     if ((b <= a && a <= c) || (c <= a && a <= b)) return a;
     return c;
 }
 
-static int32_t ramp_toward(int32_t cur, int32_t tgt, int32_t step) {
-    if (cur < tgt) {
-        cur += step;
-        if (cur > tgt) cur = tgt;
-    } else if (cur > tgt) {
-        cur -= step;
-        if (cur < tgt) cur = tgt;
-    }
+int32_t ramp_toward(int32_t cur, int32_t tgt, int32_t step) {
+    if      (cur < tgt) { cur += step; if (cur > tgt) cur = tgt; }
+    else if (cur > tgt) { cur -= step; if (cur < tgt) cur = tgt; }
     return cur;
 }
 
-static int32_t throttle_to_v_mmps(int32_t throttle) {
+int32_t throttle_to_v_mmps(int32_t throttle) {
     if (throttle < 0) throttle = 0;
-    return (int32_t)((long long)throttle * V_MAX_MMPS / 9999);
+    return (int32_t)((long long)throttle * V_MAX_MMPS / 9999); // 9999 = max throttle cmd
 }
 
-static overtake_state_t overtake_step(int32_t front_filt, int32_t r_acc_in, int32_t r_thresh, int32_t d2, int32_t ld2, int32_t gz_ddps, uint32_t now_ms) {
+overtake_state_t overtake_step(int32_t front_filt, int32_t r_acc_in, int32_t r_thresh, int32_t d2, int32_t ld2, int32_t gz_ddps, uint32_t now_ms) {
     overtake_state_t next_state = ot_state;
     
+    // bail out if something wrong
     if (ot_state != S_FOLLOW && ot_state != S_DETECT) {
-        int abort_flag = 0;
-        if (front_filt < 200) abort_flag = 1;
-        if (abs(gz_ddps) > ABORT_GZ) abort_flag = 1;
+        int bail = 0;
+        if (front_filt < 200) bail = 1; // wall coming
+        if (abs(gz_ddps) > ABORT_GZ) bail = 1;
         if (ot_state == S_COMMIT || ot_state == S_PASS) {
-            if (ot_side == -1 && d2 < ABORT_SIDE) abort_flag = 1;
-            if (ot_side == 1 && ld2 < ABORT_SIDE) abort_flag = 1;
+            if (ot_side == -1 && d2 < ABORT_SIDE) bail = 1;
+            if (ot_side == 1 && ld2 < ABORT_SIDE) bail = 1;
         }
-        int32_t df_dt = front_filt - front_prev_filt; 
-        if (ot_state == S_COMMIT && df_dt > ABORT_DF) abort_flag = 1;
-        
-        if (abort_flag) {
+        int32_t df_dt = front_filt - front_prev_filt;
+        if (ot_state == S_COMMIT && df_dt > ABORT_DF) bail = 1; // car swerved back
+        if (bail) {
             dist_ref_target = 0;
             return S_FOLLOW;
         }
@@ -479,18 +471,19 @@ static overtake_state_t overtake_step(int32_t front_filt, int32_t r_acc_in, int3
         case S_DETECT:
             dist_ref_target = 0;
             if (front_filt < FRONT_DETECT && r_acc_in > r_thresh) {
-                if (d2 >= D2_MIN_PASS && d2 >= ld2) { // pass right
+                if (d2 >= D2_MIN_PASS && d2 >= ld2) { // go right
                     ot_side = -1;
                     dist_ref_target = -OFFSET_CMD;
                     next_state = S_COMMIT;
                     ot_state_entry_ms = now_ms;
-                } else if (ld2 >= LD2_MIN_PASS) { // pass left
+                    // ST7735_Message(1, 4, "COMMIT R", d2);
+                } else if (ld2 >= LD2_MIN_PASS) { // go left
                     ot_side = 1;
-                    dist_ref_target = +OFFSET_CMD;
+                    dist_ref_target = OFFSET_CMD;
                     next_state = S_COMMIT;
                     ot_state_entry_ms = now_ms;
                 } else {
-                    if (front_filt < 400) next_state = S_FOLLOW;
+                    if (front_filt < 400) next_state = S_FOLLOW; // too close, can't pass?
                 }
             } else {
                 next_state = S_FOLLOW;
@@ -519,14 +512,11 @@ static overtake_state_t overtake_step(int32_t front_filt, int32_t r_acc_in, int3
             break;
             
         case S_REJOIN:
+            // obstacle came back, restart passing
             if (ot_side == -1 && d2 < ABORT_SIDE) { dist_ref_target = -OFFSET_CMD; next_state = S_PASS; }
-            if (ot_side == 1 && ld2 < ABORT_SIDE) { dist_ref_target = +OFFSET_CMD; next_state = S_PASS; }
-            
-            if (abs(dist_ref_cur) < 10) {
-                if ((now_ms - ot_state_entry_ms) > T_SETTLE) {
-                    next_state = S_FOLLOW;
-                }
-            }
+            if (ot_side == 1 && ld2 < ABORT_SIDE) { dist_ref_target = OFFSET_CMD; next_state = S_PASS; }
+            if (abs(dist_ref_cur) < 10 && (now_ms - ot_state_entry_ms) > T_SETTLE)
+                next_state = S_FOLLOW;
             break;
     }
     
@@ -560,8 +550,6 @@ void Robot(void){
   while (LaunchPad_InS2() == 0); // REMOVE AFTER DATA COLLECTION
 
   // Gyro-Z bias estimation. Robot must remain stationary.
-  // 1 s settle buffer so the user's hand leaves S2 and any vibration decays;
-  // motors stay idle until the control loop below.
   UART_OutString("Calibrating IMU...");
   OS_Sleep(1000);
   int32_t gzSum = 0;
@@ -571,7 +559,7 @@ void Robot(void){
     int16_t g = IMU_GyroZ;
     EndCritical(csr);
     gzSum += g;
-    OS_Sleep(25); // IMU_Task updates every 20 ms; 25 ms guarantees a fresh sample
+    OS_Sleep(25); // wait for IMU update
   }
   gyroZ_bias = (int16_t)(gzSum / (int32_t)BIAS_SAMPLES);
   UART_OutString(" gz_bias=");
@@ -663,7 +651,7 @@ void Robot(void){
     int32_t steeringAngle = ((e_a * kp_a) / 10) + (((e_a - prevE_A) * kd_a) / 10);
     prevE_A = e_a;
 
-    uint16_t throttle = 9999; // max throttle
+    uint16_t throttle = 9990; // max throttle
     // Follow the gap kicks in when turn comes up
     if(ot_state != S_COMMIT && ot_state != S_PASS && front < 800){
       if (front < 600) throttle -= 1000;
@@ -749,6 +737,8 @@ void Robot(void){
     // Model_Inputs[throttle_right_prev] = Modesoftwarel_Normalize(throttle_r, CAP_THROTTLE);
     // Model_Inputs[steering_prev] = Model_NormalizeSigned(steeringAngle, CAP_STEERING);
 
+    ST7735_Message(1, 2, "throt r", throttle_r);
+    ST7735_Message(1, 3, "throt L", throttle_l);
     CAN_SetMotors(throttle_l, throttle_r, steeringAngle);
     prev_throttle_avg = ((int32_t)throttle_l + throttle_r) / 2;
 
