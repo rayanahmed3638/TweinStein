@@ -412,15 +412,18 @@ int FileDumpRow(int32_t* row){
 }
 
 typedef enum { S_FOLLOW, S_DETECT, S_COMMIT, S_PASS, S_REJOIN } overtake_state_t;
-overtake_state_t ot_state = S_FOLLOW;
-int32_t ot_side = 0;       // -1=right, 1=left
-uint32_t ot_detect_cnt = 0;
-uint32_t ot_state_entry_ms = 0, ot_clear_since_ms = 0;
-int32_t front_prev_filt = 0;
-int32_t dist_ref_target = 0;
-int32_t v_hat = 0, r_acc = 0;
-int32_t prev_throttle_avg = 0;
-int32_t front_m1 = 0, front_m2 = 0;
+static overtake_state_t ot_state = S_FOLLOW; // Follow by default
+static int32_t ot_side = 0;
+static uint32_t ot_detect_cnt = 0;
+static uint32_t ot_state_entry_ms = 0;
+static uint32_t ot_clear_since_ms = 0;
+static int32_t front_prev_filt = 0;
+static int32_t dist_ref_target = 0;
+static int32_t v_hat = 0;
+static int32_t r_acc = 0;
+static int32_t prev_throttle_avg = 0;
+static int32_t front_m1 = 0;
+static int32_t front_m2 = 0;
 
 int32_t median3_i32(int32_t a, int32_t b, int32_t c) {
     if ((a <= b && b <= c) || (c <= b && b <= a)) return b;
@@ -439,20 +442,22 @@ int32_t throttle_to_v_mmps(int32_t throttle) {
     return (int32_t)((long long)throttle * V_MAX_MMPS / 9999); // 9999 = max throttle cmd
 }
 
-overtake_state_t overtake_step(int32_t front_filt, int32_t r_acc_in, int32_t r_thresh, int32_t d2, int32_t ld2, int32_t gz_ddps, uint32_t now_ms) {
-    overtake_state_t next_state = ot_state;
-    
-    // bail out if something wrong
+// Overtaking logic follows, detects a car in front, commits to a side, passes, rejoins to the center, and then goes back to following (normal control)
+// ot_side = -1 means right pass, +1 means left
+static overtake_state_t overtake_step(int32_t front_filt, int32_t r_acc_in, int32_t r_thresh, int32_t d2, int32_t ld2, int32_t gz_ddps, uint32_t now_ms) {
+    overtake_state_t next_state = ot_state; // Stay in this state by default
+
+    // bail out if something wrong.
     if (ot_state != S_FOLLOW && ot_state != S_DETECT) {
         int bail = 0;
-        if (front_filt < 200) bail = 1; // wall coming
-        if (abs(gz_ddps) > ABORT_GZ) bail = 1;
+        if (front_filt < 200) bail = 1; // wall coming, < 20cm
+        if (abs(gz_ddps) > ABORT_GZ) bail = 1; // spinning out, gyro too much
         if (ot_state == S_COMMIT || ot_state == S_PASS) {
             if (ot_side == -1 && d2 < ABORT_SIDE) bail = 1;
             if (ot_side == 1 && ld2 < ABORT_SIDE) bail = 1;
         }
         int32_t df_dt = front_filt - front_prev_filt;
-        if (ot_state == S_COMMIT && df_dt > ABORT_DF) bail = 1; // car swerved back
+        if (ot_state == S_COMMIT && df_dt > ABORT_DF) bail = 1; // object moved out of the way before we finished the pass
         if (bail) {
             dist_ref_target = 0;
             return S_FOLLOW;
@@ -460,15 +465,19 @@ overtake_state_t overtake_step(int32_t front_filt, int32_t r_acc_in, int32_t r_t
     }
 
     switch(ot_state) {
-        case S_FOLLOW:
+        case S_FOLLOW: // Normal algorithm, but could switch into overtaking if car is detected in front
             dist_ref_target = 0;
+
+            // Car detected when obstacle in front is close and is closing in slower than a stationary wall would
+            // Will move to detect state if there is also enough room on one side to pass
             if (front_filt < FRONT_DETECT && r_acc_in > r_thresh && (d2 > D2_MIN_PASS || ld2 > LD2_MIN_PASS)) {
                 next_state = S_DETECT;
                 ot_detect_cnt = 0;
             }
             break;
-            
+
         case S_DETECT:
+            // pick the side with more room to commit and pass
             dist_ref_target = 0;
             if (front_filt < FRONT_DETECT && r_acc_in > r_thresh) {
                 if (d2 >= D2_MIN_PASS && d2 >= ld2) { // go right
@@ -486,33 +495,35 @@ overtake_state_t overtake_step(int32_t front_filt, int32_t r_acc_in, int32_t r_t
                     if (front_filt < 400) next_state = S_FOLLOW; // too close, can't pass?
                 }
             } else {
-                next_state = S_FOLLOW;
+                next_state = S_FOLLOW; // fallback to following
             }
             break;
-            
+
         case S_COMMIT:
+            // Wait until we're close enough to a wall to pass around the car in front
             if (abs(dist_ref_cur - dist_ref_target) < 10) {
                 next_state = S_PASS;
                 ot_state_entry_ms = now_ms;
-                ot_clear_since_ms = 0;
+                ot_clear_since_ms = 0; // front is not clear
             }
             break;
-            
+
         case S_PASS:
+            // Stay passing until the front is clear for T_CLEAR_MS milliseconds and we've been passing for at least T_PASS_MIN
             if (front_filt > PASS_CLEAR) {
-                if (ot_clear_since_ms == 0) ot_clear_since_ms = now_ms;
+                if (ot_clear_since_ms == 0) ot_clear_since_ms = now_ms; // start clear-timer on first clear sample
                 if ((now_ms - ot_clear_since_ms) > T_CLEAR_MS && (now_ms - ot_state_entry_ms) > T_PASS_MIN) {
                     next_state = S_REJOIN;
                     dist_ref_target = 0;
                     ot_state_entry_ms = now_ms;
                 }
             } else {
-                ot_clear_since_ms = 0;
+                ot_clear_since_ms = 0; // reset if something still in front
             }
             break;
-            
+
         case S_REJOIN:
-            // obstacle came back, restart passing
+            // Stay close to the wall if there's still something next to us
             if (ot_side == -1 && d2 < ABORT_SIDE) {
               dist_ref_target = -OFFSET_CMD;
               next_state = S_PASS;
@@ -521,10 +532,11 @@ overtake_state_t overtake_step(int32_t front_filt, int32_t r_acc_in, int32_t r_t
               dist_ref_target = OFFSET_CMD;
               next_state = S_PASS;
             }
+            // Otherwise, settle back into the center of the track and then settle
             if (abs(dist_ref_cur) < 10 && (now_ms - ot_state_entry_ms) > T_SETTLE) next_state = S_FOLLOW;
             break;
     }
-    
+
     return next_state;
 }
 
@@ -555,7 +567,9 @@ void Robot(void){
   while (LaunchPad_InS2() == 0); // REMOVE AFTER DATA COLLECTION
 
   // Gyro-Z bias estimation. Robot must remain stationary.
-  UART_OutString("Calibrating IMU...");
+  // 1 s settle buffer so the user's hand leaves S2 and any vibration decays;
+  // motors stay idle until the control loop below.
+
   OS_Sleep(1000);
   int32_t gzSum = 0;
   const uint32_t BIAS_SAMPLES = 64; // ~1.6 s at 25 ms spacing
@@ -567,10 +581,7 @@ void Robot(void){
     OS_Sleep(25); // wait for IMU update
   }
   gyroZ_bias = (int16_t)(gzSum / (int32_t)BIAS_SAMPLES);
-  UART_OutString(" gz_bias=");
-  UART_OutSDec(gyroZ_bias);
-  UART_OutString("\n\r");
-
+  
   startTime = OS_MsTime();
   while(1) {
     elapsed = OS_MsTime() - prevTime;
@@ -619,44 +630,56 @@ void Robot(void){
     int16_t ay = IMU_AccelY;
     EndCritical(sr);
 
+    // Read IMU inputs
     int16_t gz = (int16_t)(gz_raw - gyroZ_bias); // bias-corrected for heuristic path
-    int32_t ax_mg = ((int32_t)ax * 1000) / ACCEL_SCALE; 
+    int32_t ax_mg = ((int32_t)ax * 1000) / ACCEL_SCALE;
     int32_t gz_ddps = ((int32_t)gz * 10) / GYRO_SCALE;
 
     __disable_irq();
     int32_t front = (int32_t)FrontDist;
     __enable_irq();
 
+    // Filter front TFLuna
     int32_t front_filt = median3_i32(front, front_m1, front_m2);
+
+    // Estimate velocity so we can drive overtake FSM
+    // r > 0 means obstacle moving away (slower car ahead), r < 0 means closing faster than us
     int32_t dt_ms = elapsed ? elapsed : 20;
     int32_t v_meas = throttle_to_v_mmps(prev_throttle_avg);
     v_hat = v_hat + (((v_meas - v_hat) * V_ALPHA_Q8) >> 8);
     int32_t front_pred = front_prev_filt - (v_hat * dt_ms) / 1000;
     int32_t r = front_filt - front_pred;
-    r_acc = ((r_acc * R_ACC_ALPHA_Q8) >> 8) + r;
+    r_acc = ((r_acc * R_ACC_ALPHA_Q8) >> 8) + r; // accumulate residual
     if (r_acc >  R_CAP) r_acc =  R_CAP;
     if (r_acc < -R_CAP) r_acc = -R_CAP;
-    int32_t r_thresh = R_THRESH_BASE + ((R_YAW_GAIN_Q8 * abs(gz_ddps)) >> 8);
+    int32_t r_thresh = R_THRESH_BASE + ((R_YAW_GAIN_Q8 * abs(gz_ddps)) >> 8); // harder to trip overtake logic while turning
     ot_state = overtake_step(front_filt, r_acc, r_thresh, d2, ld2, gz_ddps, OS_MsTime());
-    int32_t ramp = (abs(gz_ddps) > GZ_RAMP_GATE) ? OFFSET_RATE/2 : OFFSET_RATE;
+    
+    // Slow ramp for overtaking adjustments
+    int32_t ramp = (abs(gz_ddps) > GZ_RAMP_GATE) ? OFFSET_RATE/2 : OFFSET_RATE; 
     dist_ref_cur = ramp_toward(dist_ref_cur, dist_ref_target, ramp);
-    front_m2 = front_m1; front_m1 = front_filt; front_prev_filt = front_filt;
+    
+    front_m2 = front_m1; front_m1 = front_filt; front_prev_filt = front_filt; // shift history buffers
 
+    // calculate angle to each wall, then project to perpendicular distance
     int32_t angle   = arctan(((int32_t)(d_ir*1414)  - (int32_t)(d2*1000)) /(int32_t)(224+d2))  - angle_ref;
     int32_t L_angle = arctan(((int32_t)(ld_ir*1414) - (int32_t)(ld2*1000))/(int32_t)(224+ld2));
 
     int32_t realDist   = (d_ir  * cosine(angle))   / 1000;
     int32_t L_realDist = (ld_ir * cosine(L_angle)) / 1000;
-    int32_t e_d = realDist - L_realDist - dist_ref_cur;
+    int32_t e_d = realDist - L_realDist - dist_ref_cur; // lateral error: positive = too far right
 
+    // outer PD: lateral error produces intended heading angle
     int32_t intend_angle = ((kp_d * e_d) / 10) + ((kd_d * (e_d - prevError)) / 10);
     prevError = e_d;
 
+    // inner PD: angle error produces steering command
     int32_t e_a = intend_angle - angle;
     int32_t steeringAngle = ((e_a * kp_a) / 10) + (((e_a - prevE_A) * kd_a) / 10);
     prevE_A = e_a;
 
-    uint16_t throttle = 9990; // max throttle
+    uint16_t throttle = 9990; // assume max throttle
+    
     // Follow the gap kicks in when turn comes up
     if(ot_state != S_COMMIT && ot_state != S_PASS && front < 800){
       if (front < 600) throttle -= 1000;
